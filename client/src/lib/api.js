@@ -42,9 +42,43 @@ async function request(path, { method = 'GET', body } = {}) {
   return payload;
 }
 
+/**
+ * Builds a query string, skipping empty values and repeating array entries so
+ * `tag: ['react', 'testing']` reaches the API as `?tag=react&tag=testing`.
+ */
+function toQuery(params = {}) {
+  const search = new URLSearchParams();
+
+  for (const [key, value] of Object.entries(params)) {
+    if (value === undefined || value === null || value === '') continue;
+    if (Array.isArray(value)) value.forEach((entry) => search.append(key, entry));
+    else search.append(key, String(value));
+  }
+
+  const query = search.toString();
+  return query ? `?${query}` : '';
+}
+
 export const authApi = {
   register: (data) => request('/auth/register', { method: 'POST', body: data }),
   login: (data) => request('/auth/login', { method: 'POST', body: data }),
   logout: () => request('/auth/logout', { method: 'POST' }),
   me: () => request('/auth/me'),
+};
+
+export const linksApi = {
+  list: (params) => request(`/links${toQuery(params)}`),
+  save: (url, collectionId) =>
+    request('/links', { method: 'POST', body: collectionId ? { url, collectionId } : { url } }),
+  update: (id, patch) => request(`/links/${id}`, { method: 'PATCH', body: patch }),
+  remove: (id) => request(`/links/${id}`, { method: 'DELETE' }),
+  retry: (id) => request(`/links/${id}/retry`, { method: 'POST' }),
+  tags: () => request('/links/tags'),
+};
+
+export const collectionsApi = {
+  list: () => request('/collections'),
+  create: (name) => request('/collections', { method: 'POST', body: { name } }),
+  rename: (id, name) => request(`/collections/${id}`, { method: 'PATCH', body: { name } }),
+  remove: (id) => request(`/collections/${id}`, { method: 'DELETE' }),
 };
