@@ -41,7 +41,7 @@ export function RegisterPage() {
       footer={
         <>
           Already have an account?{' '}
-          <Link to="/login" className="font-medium text-slate-900 underline underline-offset-4">
+          <Link to="/login" className="font-medium text-accent-text underline underline-offset-4">
             Sign in
           </Link>
         </>
@@ -80,7 +80,7 @@ export function RegisterPage() {
         />
 
         {errors.formError ? (
-          <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+          <p role="alert" className="rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger-ink">
             {errors.formError}
           </p>
         ) : null}
@@ -88,7 +88,7 @@ export function RegisterPage() {
         <button
           type="submit"
           disabled={isSubmitting}
-          className="w-full rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+          className="lv-button w-full py-2.5"
         >
           {isSubmitting ? 'Creating account…' : 'Create account'}
         </button>

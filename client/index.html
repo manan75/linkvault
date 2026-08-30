@@ -4,6 +4,29 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>LinkVault</title>
+    <!--
+      Applies the stored theme before the bundle loads. Without it a dark-mode
+      user sees a full white frame on every navigation. Deliberately duplicates
+      a few lines of src/lib/preferences.js: that module cannot run this early.
+      The storage keys and attribute names must stay in step with it.
+    -->
+    <script>
+      (function () {
+        try {
+          var theme = localStorage.getItem('linkvault.theme') || 'system';
+          var accent = localStorage.getItem('linkvault.accent') || 'slate';
+          var dark =
+            theme === 'dark' ||
+            (theme === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
+
+          if (dark) document.documentElement.dataset.theme = 'dark';
+          document.documentElement.dataset.accent = accent;
+        } catch (error) {
+          // Storage can be unavailable (private mode, blocked cookies). The
+          // light default is already correct, so there is nothing to recover.
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
