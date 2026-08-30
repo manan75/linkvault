@@ -1,0 +1,93 @@
+import { TOPICS } from '../events/topics.js';
+import { decodeHtml, parseMetadata } from '../services/metadataParser.js';
+import { safeFetch } from '../services/safeFetch.js';
+import { claimForProcessing, completeLink, failLink } from './linkQueue.js';
+
+/**
+ * Consumes `link.created` and turns a saved URL into a filled-in bookmark.
+ *
+ * This is a consumer now rather than a poller, which is the entire change
+ * Phase 4 makes to extraction. `handle` is the same claim → process →
+ * complete-or-fail sequence the Phase 3 poller ran; only what calls it moved.
+ * Everything below the claim -- the guarded fetch, the parser, the retry policy
+ * -- is untouched.
+ */
+
+const isHtml = (contentType) => /^\s*(text\/html|application\/xhtml\+xml)/i.test(contentType);
+
+export function createMetadataWorker({
+  bus,
+  fetchPage = safeFetch,
+  logger = console,
+} = {}) {
+  /**
+   * Handles one `link.created` event.
+   *
+   * Returns whether work was done, which tests assert on and which makes
+   * redelivery visible: a second delivery of the same event returns false
+   * because the claim matches nothing.
+   */
+  async function handle({ linkId }) {
+    const link = await claimForProcessing(linkId);
+
+    // Already processed, or claimed by another consumer. Kafka is at-least-once
+    // and this is what makes that harmless.
+    if (!link) return false;
+
+    try {
+      const response = await fetchPage(link.url);
+
+      // A PDF or an image is not a failure -- there is simply nothing to parse,
+      // and saying so beats leaving the link retrying a page it can never read.
+      const fields = isHtml(response.contentType)
+        ? parseMetadata(decodeHtml(response.body, response.contentType), {
+            finalUrl: response.url,
+            domain: link.domain,
+          })
+        : null;
+
+      await completeLink(link, fields);
+
+      await bus.publish(TOPICS.METADATA_EXTRACTED, link.id, {
+        linkId: link.id,
+        userId: link.userId.toString(),
+        occurredAt: new Date().toISOString(),
+      });
+
+      return true;
+    } catch (error) {
+      const { terminal } = await failLink(link, error);
+
+      // A site being down is normal operation, not an incident.
+      logger.warn?.(`[metadata] ${link.id} (${link.domain}): ${error.message}`);
+
+      if (terminal) {
+        await bus.publish(TOPICS.PROCESSING_FAILED, link.id, {
+          linkId: link.id,
+          userId: link.userId.toString(),
+          stage: 'metadata',
+          reason: link.processingError,
+          occurredAt: new Date().toISOString(),
+        });
+      }
+
+      // Deliberately not rethrown. The failure is already recorded durably on
+      // the document, and throwing would make the consumer redeliver forever
+      // and block every later message on the partition -- one dead site would
+      // stop the whole pipeline.
+      return true;
+    }
+  }
+
+  return {
+    handle,
+
+    async start() {
+      await bus.subscribe({
+        topic: TOPICS.LINK_CREATED,
+        groupId: 'metadata-worker',
+        handler: handle,
+      });
+    },
+  };
+}
