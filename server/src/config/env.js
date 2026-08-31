@@ -21,6 +21,14 @@ const envSchema = z.object({
   ENABLE_KAFKA: z.enum(['true', 'false']).default('false'),
   KAFKA_BROKERS: z.string().default('localhost:9092'),
   KAFKA_CLIENT_ID: z.string().default('linkvault'),
+
+  // Enrichment (Phase 5). The key is optional on purpose: without one the
+  // enrichment worker disables itself and every other stage keeps working, so
+  // a fresh clone runs the whole product without an OpenAI account. Startup
+  // says so out loud rather than leaving links silently un-enriched.
+  OPENAI_API_KEY: z.string().min(1).optional(),
+  OPENAI_MODEL: z.string().default('gpt-5.6-luna'),
+  ENABLE_ENRICHMENT: z.enum(['true', 'false']).optional(),
 });
 
 const parsed = envSchema.safeParse(process.env);
@@ -38,6 +46,11 @@ export const env = {
     (parsed.data.ENABLE_METADATA_WORKER ?? String(parsed.data.NODE_ENV !== 'test')) === 'true',
   ENABLE_KAFKA: parsed.data.ENABLE_KAFKA === 'true',
   KAFKA_BROKERS: parsed.data.KAFKA_BROKERS.split(',').map((broker) => broker.trim()),
+  // Follows the environment like the metadata worker, but a missing key vetoes
+  // it either way -- there is nothing to call.
+  ENABLE_ENRICHMENT:
+    (parsed.data.ENABLE_ENRICHMENT ?? String(parsed.data.NODE_ENV !== 'test')) === 'true' &&
+    Boolean(parsed.data.OPENAI_API_KEY),
 };
 
 export const isProduction = env.NODE_ENV === 'production';

@@ -21,7 +21,8 @@
     "jsonwebtoken": "^9.0.2",
     "kafkajs": "^2.2.4",
     "mongoose": "^8.9.5",
-    "zod": "^3.24.1"
+    "openai": "^7.8.0",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "mongodb-memory-server": "^10.1.4",

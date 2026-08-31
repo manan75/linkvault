@@ -43,8 +43,15 @@ running the thing, not just testing it.
 
 Next: **Phase 5 — summary and tag generation. Planned and agreed, not yet built.** It subscribes to
 `metadata.extracted`, which the metadata worker already publishes and nothing consumes yet, so it
-adds a consumer without touching Phase 4's code. The provider question is now answered: Claude
-Sonnet 5 through the official SDK, with the "Important Rule" reasoning in §1 of the plan.
+adds a consumer without touching Phase 4's code. The provider question is now answered: **OpenAI
+`gpt-5.6-luna`** through the official `openai` SDK, about $0.42 per 1,000 links, with the "Important
+Rule" reasoning for using an LLM at all in §1 of the plan.
+
+**Provider setup is already done** — `openai` installed, `zod` bumped to satisfy its peer
+requirement, and `OPENAI_API_KEY` / `OPENAI_MODEL` / `ENABLE_ENRICHMENT` wired through
+`config/env.js` and `.env.example`. The next session starts at step 1 of the plan's §12 and needs a
+real key in `.env` before step 2. Without a key the whole product still runs; enrichment just turns
+itself off.
 
 The decision worth knowing before reading the code: **tag vocabulary drift is solved by putting the
 user's existing tags in the prompt, not by embedding-similarity matching.** Short-string embeddings
