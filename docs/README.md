@@ -15,7 +15,8 @@ Read in this order when picking the project back up.
 | [2026-08-30-phase-3-plan.md](./2026-08-30-phase-3-plan.md) | Phase 3 decisions and step plan: metadata extraction plus the UI pass |
 | [2026-08-30-phase-3-metadata-ui.md](./2026-08-30-phase-3-metadata-ui.md) | Phase 3: what shipped, decisions made while building, what was verified |
 | [2026-08-30-phase-4-plan.md](./2026-08-30-phase-4-plan.md) | Phase 4 decisions and step plan: Kafka, workers as separate processes |
-| [2026-08-30-phase-4-kafka.md](./2026-08-30-phase-4-kafka.md) | Phase 4: what shipped, three bugs only a real broker could find, what was verified. **Start here for the next session.** |
+| [2026-08-30-phase-4-kafka.md](./2026-08-30-phase-4-kafka.md) | Phase 4: what shipped, three bugs only a real broker could find, what was verified |
+| [2026-09-01-phase-5-plan.md](./2026-09-01-phase-5-plan.md) | Phase 5 decisions and step plan: summary and tag generation, and how the tag vocabulary is kept from drifting. **Start here for the next session.** |
 
 ---
 
@@ -40,13 +41,19 @@ misbehaves.** A schema default is not a migration; a client library that retries
 rejects; a hand-built error object does not have the flags the real one has. Budget time for
 running the thing, not just testing it.
 
-Next: **Phase 5 — summary and tag generation.** It subscribes to `metadata.extracted`, which the
-metadata worker already publishes and nothing consumes yet, so it should add a consumer without
-touching Phase 4's code. Decide the summarisation approach first — that is an LLM/provider choice
-`CLAUDE.md` does not make, and it deserves the "Important Rule" treatment.
+Next: **Phase 5 — summary and tag generation. Planned and agreed, not yet built.** It subscribes to
+`metadata.extracted`, which the metadata worker already publishes and nothing consumes yet, so it
+adds a consumer without touching Phase 4's code. The provider question is now answered: Claude
+Sonnet 5 through the official SDK, with the "Important Rule" reasoning in §1 of the plan.
+
+The decision worth knowing before reading the code: **tag vocabulary drift is solved by putting the
+user's existing tags in the prompt, not by embedding-similarity matching.** Short-string embeddings
+measure topical relatedness rather than synonymy, so no threshold separates `postgres`/`postgresql`
+(merge) from `react`/`vue` (never merge). Similarity returns in Phase 6 as a *recall* step that
+shortlists candidates for the model, once a vocabulary outgrows the prompt. Plan §3.
 
 Phase 5 is also the point at which **automatic collection allocation** gets revisited, with real
-auto-tagged links to judge against.
+auto-tagged links to judge against. Collections stay manual, confirmed again with the user.
 
 ## Local environment
 
