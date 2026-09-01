@@ -7,9 +7,9 @@ See [`CLAUDE.md`](./CLAUDE.md) for the full product spec and architecture.
 
 ## Status
 
-**Phase 4 complete** — everything from Phase 3, plus Kafka and an event-driven
-pipeline: the API publishes `link.created`, and extraction runs in its own worker
-process. Summary and tag generation are next.
+**Phase 5 complete** — everything from Phase 4, plus generated summaries and tags.
+A second worker consumes `metadata.extracted`, asks a model for a short summary and
+up to five tags, and writes them back. Embeddings and semantic search are next.
 
 ## Layout
 
@@ -33,7 +33,9 @@ process with no broker.
 ```bash
 # 1. Configure environment
 cp .env.example .env
-# then edit .env and set JWT_SECRET to a long random value
+# then edit .env and set JWT_SECRET to a long random value.
+# OPENAI_API_KEY is optional: leave it empty and enrichment disables itself
+# cleanly -- links just arrive without a summary or auto-tags.
 
 # 2. Start MongoDB (and Kafka, if you want the real event pipeline)
 docker compose up -d mongo
@@ -47,7 +49,7 @@ npm --prefix client install
 npm --prefix server run dev    # http://localhost:4000
 npm --prefix client run dev    # http://localhost:5173
 
-# 5. Only with ENABLE_KAFKA=true — extraction runs in its own process
+# 5. Only with ENABLE_KAFKA=true — the workers run in their own process
 npm --prefix server run worker
 ```
 
@@ -74,6 +76,7 @@ Tests run against an ephemeral in-memory MongoDB — no running database require
 | POST   | `/api/links`            | ✓    | Save a URL, optionally into a collection (`201` new, `200` already saved) |
 | GET    | `/api/links`            | ✓    | List and search, with filters and paging |
 | GET    | `/api/links/tags`       | ✓    | The user's tags with counts             |
+| PATCH  | `/api/links/tags/:name` | ✓    | Rename a tag everywhere; renaming onto an existing tag merges them |
 | GET    | `/api/links/:id`        | ✓    | One bookmark                            |
 | PATCH  | `/api/links/:id`        | ✓    | Edit title, notes, tags, collection, favorite, read |
 | DELETE | `/api/links/:id`        | ✓    | Delete permanently                      |
@@ -101,14 +104,33 @@ POST /api/links ──► MongoDB (pending)
                         ▼
                   link.created ──► metadata worker ──► MongoDB (ready)
                                           │
-                                          ├─► metadata.extracted   (Phase 5 consumes)
-                                          └─► link.processing.failed
+                                          ├─► link.processing.failed
+                                          │
+                                          └─► metadata.extracted
+                                                     │
+                                                     ▼
+                                            enrichment worker ──► MongoDB (summary, autoTags)
+                                                     │
+                                                     ├─► link.enriched   (Phase 6 consumes)
+                                                     └─► link.processing.failed
 ```
 
 A link moves `pending → queued → processing → ready | failed`. The **reaper** claims
 pending links, marks them `queued`, and publishes; the **worker** claims `queued` links,
 fetches and parses them, and writes back. Extraction fills only fields the user left
 empty, so typed values are never overwritten.
+
+**Enrichment is a separate state machine, on purpose.** A link reaches `ready` on
+extraction alone and `enrichmentStatus` advances beside it, because a bookmark whose
+summary failed is still a perfectly good bookmark — it has a title, a favicon and a URL,
+and it opens. The dashboard shows a summary when there is one and shows nothing where
+there is not; there is no error state for a failed enrichment, and retrying is the
+reaper's job rather than a button.
+
+Redelivery is stopped by the same status-based claim extraction uses, which here is also
+the cost control: a repeated event bills nothing. A link with no description whose title
+is merely its own domain is `skipped` without a call at all — there is nothing to
+summarise, and asking anyway is the strongest temptation there is to invent.
 
 **Why a reaper instead of publishing on save.** Committing to MongoDB and then publishing
 is a dual write: if the publish fails, the event never exists and the link waits at
@@ -131,6 +153,24 @@ re-checks each redirect hop, connects to the address it checked, caps the respon
 swaps in an in-process bus and runs the worker inside the API — the same reaper, the same
 consumer, the same state machine, just no broker and no process boundary.
 `ENABLE_METADATA_WORKER=false` turns the pipeline off entirely.
+
+`OPENAI_API_KEY` enables enrichment; without one it disables itself and every other
+stage keeps working. `OPENAI_MODEL` selects the model and defaults to `gpt-5-mini`.
+`ENABLE_ENRICHMENT=false` turns it off with a key present. Startup logs which of these
+is in effect, so links are never left un-enriched with nothing in the log explaining why.
+
+## Tags
+
+Generated tags reuse the vocabulary a user already has: their existing tags go into the
+prompt, and the model is asked to reuse one whenever it genuinely fits. Two deterministic
+guards sit outside the call — normalisation, and a case-insensitive snap onto the existing
+vocabulary — so `React` and `react` cannot become two entries in the sidebar even if the
+model slips.
+
+Once a link's tags have been edited by hand, enrichment writes its summary and never
+touches its tags again: an auto-tag you deleted must not reappear. `PATCH
+/api/links/tags/:name` renames a tag across the whole library, and renaming onto a tag
+that already exists is the merge.
 
 ## Appearance
 

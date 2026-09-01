@@ -13,6 +13,13 @@ export const EMPTY_FILTERS = {
   isRead: undefined,
 };
 
+/**
+ * How long after saving a link the dashboard keeps waiting for its summary.
+ * Generous: enrichment normally finishes in seconds. See the poll below for
+ * why it is bounded at all.
+ */
+const ENRICHMENT_POLL_WINDOW_MS = 5 * 60_000;
+
 function messageFor(error) {
   return error?.message ?? 'Something went wrong.';
 }
@@ -166,6 +173,24 @@ export function useVault() {
     [reload],
   );
 
+  const renameTag = useCallback(
+    async (name, to) => {
+      const result = await linksApi.renameTag(name, to);
+
+      // A rename touches every link carrying the tag, and the filter may be
+      // pinned to the old name -- follow it rather than emptying the list.
+      setFilters((current) =>
+        current.tag.includes(name)
+          ? { ...current, tag: [...new Set(current.tag.map((tag) => (tag === name ? to : tag)))] }
+          : current,
+      );
+      reload();
+
+      return result;
+    },
+    [reload],
+  );
+
   const createCollection = useCallback(
     async (name) => {
       const { collection } = await collectionsApi.create(name);
@@ -196,13 +221,22 @@ export function useVault() {
     [reload],
   );
 
-  // Extraction happens in the background, so a link saved a moment ago has no
-  // title yet. Poll while anything on screen is still being processed, and stop
-  // as soon as it settles. Only on the first page: reloading would otherwise
-  // discard the pages "Load more" has added.
-  const isAnyProcessing = links.some((link) =>
-    ['pending', 'queued', 'processing'].includes(link.processingStatus),
-  );
+  // Extraction and enrichment both happen in the background, so a link saved a
+  // moment ago has no title, and one extracted a moment ago has no summary yet.
+  // Poll while anything on screen is still in flight through either stage, and
+  // stop as soon as it settles. Only on the first page: reloading would
+  // otherwise discard the pages "Load more" has added.
+  const isAnyProcessing = links.some((link) => {
+    if (['pending', 'queued', 'processing'].includes(link.processingStatus)) return true;
+    if (!['pending', 'queued', 'processing'].includes(link.enrichmentStatus)) return false;
+
+    // Enrichment is optional: with no API key configured every link stays
+    // `pending` forever, and polling on that alone would leave a keyless
+    // install refetching the dashboard every few seconds for as long as it is
+    // open. A recently saved link is the only case where waiting is meaningful
+    // -- enrichment normally lands within seconds of extraction.
+    return Date.now() - new Date(link.savedAt).getTime() < ENRICHMENT_POLL_WINDOW_MS;
+  });
 
   useEffect(() => {
     if (!isAnyProcessing || page !== 1) return undefined;
@@ -242,6 +276,7 @@ export function useVault() {
     uncategorisedCount,
     totalCount,
     tags,
+    renameTag,
 
     saveLink,
     updateLink,

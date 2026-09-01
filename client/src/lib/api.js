@@ -74,6 +74,10 @@ export const linksApi = {
   remove: (id) => request(`/links/${id}`, { method: 'DELETE' }),
   retry: (id) => request(`/links/${id}/retry`, { method: 'POST' }),
   tags: () => request('/links/tags'),
+  // Renaming onto an existing tag merges the two; the API returns the refreshed
+  // vocabulary so the sidebar does not need a second round trip.
+  renameTag: (name, to) =>
+    request(`/links/tags/${encodeURIComponent(name)}`, { method: 'PATCH', body: { name: to } }),
 };
 
 export const collectionsApi = {

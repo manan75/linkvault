@@ -78,7 +78,12 @@ export function DashboardPage() {
               onDelete={vault.deleteCollection}
             />
 
-            <TagFilter tags={vault.tags} activeTags={vault.filters.tag} onToggle={vault.toggleTag} />
+            <TagFilter
+              tags={vault.tags}
+              activeTags={vault.filters.tag}
+              onToggle={vault.toggleTag}
+              onRename={vault.renameTag}
+            />
           </aside>
 
           <section aria-label="Saved links">

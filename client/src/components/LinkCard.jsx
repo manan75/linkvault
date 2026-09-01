@@ -219,24 +219,46 @@ export function LinkCard({ link, collections, onUpdate, onDelete, onRetry, onTag
             </div>
           </div>
 
-          {link.description ? (
-            <p className="mt-2 line-clamp-2 text-sm text-ink-muted">{link.description}</p>
+          {/*
+            The generated summary wins over the page's own description when it
+            exists. It is written for someone who half remembers saving this,
+            which is the entire product; the description is written by whoever
+            made the page. Showing both would mostly show the same sentence
+            twice -- the summary is built from the description.
+          */}
+          {link.summary || link.description ? (
+            <p className="mt-2 line-clamp-2 text-sm text-ink-muted">
+              {link.summary || link.description}
+            </p>
           ) : null}
 
           <ProcessingNote link={link} onRetry={onRetry ? run(() => onRetry(link.id)) : undefined} />
 
           {link.tags.length > 0 ? (
             <div className="mt-3 flex flex-wrap items-center gap-1.5">
-              {link.tags.map((tag) => (
-                <button
-                  key={tag}
-                  type="button"
-                  onClick={() => onTagClick(tag)}
-                  className="rounded-full bg-surface-muted px-2 py-0.5 text-xs text-ink-muted transition hover:bg-surface-sunken hover:text-ink"
-                >
-                  {tag}
-                </button>
-              ))}
+              {link.tags.map((tag) => {
+                // A generated tag reads as a suggestion rather than a fact the
+                // user asserted. Only worth distinguishing while the user has
+                // not curated this link: once they have, every tag on it is
+                // theirs by definition.
+                const isAuto = !link.tagsEditedByUser && (link.autoTags ?? []).includes(tag);
+
+                return (
+                  <button
+                    key={tag}
+                    type="button"
+                    onClick={() => onTagClick(tag)}
+                    title={isAuto ? 'Added automatically — edit the bookmark to change it' : undefined}
+                    className={`rounded-full px-2 py-0.5 text-xs transition hover:text-ink ${
+                      isAuto
+                        ? 'border border-dashed border-line-strong text-ink-faint hover:bg-surface-muted'
+                        : 'bg-surface-muted text-ink-muted hover:bg-surface-sunken'
+                    }`}
+                  >
+                    {tag}
+                  </button>
+                );
+              })}
             </div>
           ) : null}
         </div>
