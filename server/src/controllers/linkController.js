@@ -6,6 +6,7 @@ import {
   getOwnedLink,
   listLinks,
   listTags,
+  renameTag,
   retryProcessing,
   updateLink,
 } from '../services/linkService.js';
@@ -57,6 +58,10 @@ export const updateLinkSchema = z
   .refine((patch) => Object.keys(patch).length > 0, {
     message: 'Provide at least one field to update',
   });
+
+export const renameTagSchema = z.object({
+  name: z.string().trim().min(1, 'A new tag name is required').max(40),
+});
 
 export const listLinksSchema = z.object({
   q: z.string().trim().min(1).max(200).optional(),
@@ -117,4 +122,24 @@ export const removeLink = asyncHandler(async (req, res) => {
 
 export const getTags = asyncHandler(async (req, res) => {
   res.status(200).json({ tags: await listTags(req.userId) });
+});
+
+/**
+ * Renames one tag across the user's whole library, merging if the target
+ * already exists.
+ *
+ * The tag is in the path rather than the body because it identifies the thing
+ * being changed. It arrives percent-encoded, and Express has already decoded
+ * `req.params` for us.
+ */
+export const renameTagEverywhere = asyncHandler(async (req, res) => {
+  const result = await renameTag({
+    userId: req.userId,
+    from: req.params.name,
+    to: req.body.name,
+  });
+
+  // The refreshed vocabulary rides along so the sidebar does not need a second
+  // round trip to show the result of what the user just did.
+  res.status(200).json({ ...result, tags: await listTags(req.userId) });
 });

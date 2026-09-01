@@ -8,6 +8,8 @@ import {
   listLinksSchema,
   patchLink,
   removeLink,
+  renameTagEverywhere,
+  renameTagSchema,
   retryLink,
   saveLink,
   updateLinkSchema,
@@ -22,6 +24,8 @@ linkRouter.use(requireAuth);
 
 // Declared before `/:id` so "tags" is not read as a link id.
 linkRouter.get('/tags', getTags);
+// Renaming onto an existing tag is the merge; there is no separate endpoint.
+linkRouter.patch('/tags/:name', validate(renameTagSchema), renameTagEverywhere);
 
 linkRouter.post('/', validate(createLinkSchema), saveLink);
 linkRouter.get('/', validate(listLinksSchema, 'query'), getLinks);
