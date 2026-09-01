@@ -2,7 +2,7 @@ import { connectDatabase } from './config/db.js';
 import { env } from './config/env.js';
 import { createApp } from './app.js';
 import { eventBus } from './events/index.js';
-import { metadataWorker, reaper } from './workers/runtime.js';
+import { enrichmentWorker, metadataWorker, reaper } from './workers/runtime.js';
 
 async function start() {
   await connectDatabase();
@@ -41,7 +41,35 @@ async function start() {
       await metadataWorker.start();
       console.log('Metadata worker running in-process');
     }
+
+    logEnrichmentState();
+
+    if (env.ENABLE_ENRICHMENT && !env.ENABLE_KAFKA) {
+      await enrichmentWorker.start();
+      console.log('Enrichment worker running in-process');
+    }
   }
+}
+
+/**
+ * Says out loud why enrichment is or is not running.
+ *
+ * Without this the failure mode is silent and baffling: every link arrives
+ * `ready` with no summary and no tags, nothing is logged, and the only clue is
+ * a variable that was never set. A missing key is by far the likeliest cause,
+ * so it gets its own line rather than being folded into a generic "disabled".
+ */
+function logEnrichmentState() {
+  if (env.ENABLE_ENRICHMENT) {
+    console.log(`Enrichment enabled using ${env.OPENAI_MODEL}`);
+    return;
+  }
+
+  console.log(
+    env.OPENAI_API_KEY
+      ? 'Enrichment disabled (ENABLE_ENRICHMENT=false) — links will have no summary or auto-tags'
+      : 'Enrichment disabled: no OPENAI_API_KEY set — links will have no summary or auto-tags',
+  );
 }
 
 async function shutdown(signal) {

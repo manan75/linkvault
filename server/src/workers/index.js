@@ -1,7 +1,7 @@
 import { connectDatabase } from '../config/db.js';
 import { env } from '../config/env.js';
 import { eventBus } from '../events/index.js';
-import { metadataWorker } from './runtime.js';
+import { enrichmentWorker, metadataWorker } from './runtime.js';
 
 /**
  * The worker process.
@@ -36,6 +36,20 @@ async function start() {
 
   await metadataWorker.start();
   console.log('Metadata worker consuming link.created');
+
+  // Both consumers share this process. Splitting them is a scaling decision
+  // with no evidence behind it yet, and the process boundary that mattered --
+  // off the API -- is already crossed.
+  if (env.ENABLE_ENRICHMENT) {
+    await enrichmentWorker.start();
+    console.log(`Enrichment worker consuming metadata.extracted using ${env.OPENAI_MODEL}`);
+  } else {
+    console.warn(
+      env.OPENAI_API_KEY
+        ? 'Enrichment disabled (ENABLE_ENRICHMENT=false) — no summaries or auto-tags'
+        : 'Enrichment disabled: no OPENAI_API_KEY set — no summaries or auto-tags',
+    );
+  }
 }
 
 async function shutdown(signal) {

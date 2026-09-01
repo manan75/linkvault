@@ -1,10 +1,16 @@
 import { TOPICS } from '../events/topics.js';
 import { withDeadline } from '../utils/withDeadline.js';
+import {
+  claimForEnrichmentQueue,
+  reclaimStaleEnrichment,
+  releaseEnrichmentToPending,
+} from './enrichmentQueue.js';
 import { claimForQueue, reclaimStale, releaseToPending } from './linkQueue.js';
 
 /**
- * Publishes `link.created` for every bookmark waiting to be processed, and
- * hands back anything whose lease expired.
+ * Publishes `link.created` for every bookmark waiting to be processed and
+ * `metadata.extracted` for every one still waiting to be enriched, and hands
+ * back anything whose lease expired.
  *
  * This is the Phase 3 poller with its job changed: it used to fetch pages, now
  * it only publishes. Keeping it is what makes the event pipeline safe.
@@ -15,6 +21,11 @@ import { claimForQueue, reclaimStale, releaseToPending } from './linkQueue.js';
  * at `pending` forever with nothing logged. Sweeping the database instead makes
  * the `links` collection its own outbox: no outbox table, no Mongo
  * transactions, no relay process.
+ *
+ * Phase 5 added the second stage to the same sweep rather than a second reaper.
+ * It is the same claim-then-publish against the same collection, the enrichment
+ * half is normally dormant because the live `metadata.extracted` message does
+ * the work, and one loop means one place where a stalled pipeline is visible.
  */
 
 /**
@@ -39,6 +50,13 @@ export function createReaper({
   batchSize = 50,
   publishTimeoutMs = PUBLISH_TIMEOUT_MS,
   cooldownMs = PUBLISH_COOLDOWN_MS,
+  /**
+   * Whether to sweep for links awaiting enrichment. Off means they simply wait
+   * at `pending`: with no key configured there is no consumer, and republishing
+   * into a topic nobody reads would churn every link in the library through the
+   * queued lease forever. They are picked up whenever a key appears.
+   */
+  enrichmentEnabled = true,
   logger = console,
 } = {}) {
   let timer = null;
@@ -73,28 +91,44 @@ export function createReaper({
     }
   }
 
-  async function runOnce() {
-    // Always first, and never behind the publish loop. This is what recovers
-    // links stranded by the very outages that stop publishing from working, so
-    // it must not share their fate.
-    const { lostMessages, abandonedWork } = await reclaimStale();
+  /** Claims one link awaiting enrichment and republishes `metadata.extracted`. */
+  async function queueOneForEnrichment() {
+    const link = await claimForEnrichmentQueue();
+    if (!link) return null;
 
-    if (lostMessages > 0) {
-      logger.warn?.(`[reaper] ${lostMessages} link(s) never reached a consumer, requeued`);
+    try {
+      await withDeadline(
+        // Deliberately the same event the metadata worker emits, not a new
+        // topic. The consumer cannot tell a recovery from a first delivery and
+        // should not have to: its claim makes both cases identical.
+        bus.publish(TOPICS.METADATA_EXTRACTED, link.id, {
+          linkId: link.id,
+          userId: link.userId.toString(),
+          occurredAt: new Date().toISOString(),
+        }),
+        publishTimeoutMs,
+        `publish did not complete within ${publishTimeoutMs}ms`,
+      );
+
+      return link;
+    } catch (error) {
+      await releaseEnrichmentToPending(link.id);
+      throw error;
     }
-    if (abandonedWork > 0) {
-      logger.warn?.(`[reaper] ${abandonedWork} abandoned claim(s) recovered`);
-    }
+  }
 
-    if (Date.now() < publishPausedUntil) return 0;
-
+  /**
+   * Publishes up to `batchSize` links from one stage, pausing the whole reaper
+   * on the first failure.
+   */
+  async function publishBatch(claimAndPublish) {
     let published = 0;
 
     for (let slot = 0; slot < batchSize; slot += 1) {
       let link;
 
       try {
-        link = await queueOne();
+        link = await claimAndPublish();
       } catch (error) {
         // Almost always the broker being unreachable. Back off rather than
         // grinding the whole backlog through the same failure; the links stay
@@ -108,6 +142,38 @@ export function createReaper({
 
       if (!link) break;
       published += 1;
+    }
+
+    return published;
+  }
+
+  async function runOnce() {
+    // Always first, and never behind the publish loop. This is what recovers
+    // links stranded by the very outages that stop publishing from working, so
+    // it must not share their fate.
+    const [extraction, enrichment] = await Promise.all([
+      reclaimStale(),
+      enrichmentEnabled ? reclaimStaleEnrichment() : { lostMessages: 0, abandonedWork: 0 },
+    ]);
+
+    const lostMessages = extraction.lostMessages + enrichment.lostMessages;
+    const abandonedWork = extraction.abandonedWork + enrichment.abandonedWork;
+
+    if (lostMessages > 0) {
+      logger.warn?.(`[reaper] ${lostMessages} link(s) never reached a consumer, requeued`);
+    }
+    if (abandonedWork > 0) {
+      logger.warn?.(`[reaper] ${abandonedWork} abandoned claim(s) recovered`);
+    }
+
+    if (Date.now() < publishPausedUntil) return 0;
+
+    // Extraction first: enrichment has nothing to work with until it has run,
+    // and a backlog of un-extracted links is the more visible stall.
+    let published = await publishBatch(queueOne);
+
+    if (enrichmentEnabled && Date.now() >= publishPausedUntil) {
+      published += await publishBatch(queueOneForEnrichment);
     }
 
     return published;

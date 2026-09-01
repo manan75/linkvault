@@ -9,6 +9,24 @@ import mongoose from 'mongoose';
  */
 export const PROCESSING_STATUSES = ['pending', 'queued', 'processing', 'ready', 'failed'];
 
+/**
+ * Enrichment runs its own state machine, deliberately separate from
+ * `processingStatus`. A link whose enrichment failed is still a perfectly good
+ * bookmark -- it has a title, a favicon and a URL, and it opens -- so it must
+ * not be shown to the user as broken.
+ *
+ * `skipped` is a real terminal state rather than a failure: no API key
+ * configured, or nothing worth sending (see services/enrichment.js).
+ */
+export const ENRICHMENT_STATUSES = [
+  'pending',
+  'queued',
+  'processing',
+  'done',
+  'skipped',
+  'failed',
+];
+
 const linkSchema = new mongoose.Schema(
   {
     userId: {
@@ -35,15 +53,33 @@ const linkSchema = new mongoose.Schema(
     favicon: { type: String, trim: true, default: '' },
     thumbnail: { type: String, trim: true, default: '' },
 
-    // Filled in by later phases. Nothing writes these yet.
+    // Written by the enrichment worker. One or two sentences; the 2000 limit is
+    // a ceiling, not a goal. Empty when the page gave the model nothing to work
+    // with -- an invented summary is worse than none, because it is shown as
+    // fact and Phase 6 will embed it.
     summary: { type: String, trim: true, maxlength: 2000, default: '' },
+    // Filled in by Phase 6. Nothing writes this yet.
     // Vector payloads are large and never needed by a list view.
     embedding: { type: [Number], default: undefined, select: false },
 
+    // The effective tag set: what the user filters and searches by, whatever
+    // its provenance. Type unchanged from Phase 2, so every index, the text
+    // index and the `$all` filters keep working with no migration.
     tags: {
       type: [{ type: String, trim: true, maxlength: 40 }],
       default: [],
     },
+    // Exactly what the model produced, kept apart from the effective set so the
+    // two can be told apart in the UI and by any future backfill.
+    autoTags: {
+      type: [{ type: String, trim: true, maxlength: 40 }],
+      default: [],
+    },
+    // Once the user has curated this link's tags, enrichment stops touching
+    // them. Without this, deleting an auto-tag you dislike only lasts until the
+    // next re-enrichment puts it back, which is the fastest way to make someone
+    // turn the feature off.
+    tagsEditedByUser: { type: Boolean, default: false },
     collectionId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Collection',
@@ -71,6 +107,21 @@ const linkSchema = new mongoose.Schema(
     // assumed to belong to a process that died and is handed back.
     processingStartedAt: { type: Date, default: null },
     processedAt: { type: Date, default: null },
+
+    // --- Enrichment (Phase 5) ---
+    // The same lease and retry bookkeeping the extraction fields carry above,
+    // for the same reasons: a redelivered event must not bill a second API
+    // call, and a consumer that dies mid-call must not strand the link.
+    enrichmentStatus: {
+      type: String,
+      enum: ENRICHMENT_STATUSES,
+      default: 'pending',
+    },
+    enrichmentAttempts: { type: Number, default: 0 },
+    enrichmentError: { type: String, trim: true, maxlength: 300, default: '' },
+    enrichmentQueuedAt: { type: Date, default: null },
+    enrichmentStartedAt: { type: Date, default: null },
+    enrichedAt: { type: Date, default: null },
   },
   { timestamps: { createdAt: 'savedAt', updatedAt: 'updatedAt' } },
 );
@@ -87,6 +138,10 @@ linkSchema.index({ userId: 1, collectionId: 1 });
 // Serves the reaper's claim query: the oldest link waiting to be published.
 // Deliberately not scoped by user -- the reaper sweeps every user's queue.
 linkSchema.index({ processingStatus: 1, savedAt: 1 });
+
+// Serves the enrichment half of the same sweep, which only ever looks at links
+// extraction has already finished with.
+linkSchema.index({ enrichmentStatus: 1, processingStatus: 1, savedAt: 1 });
 
 // Keyword search. Weighted so a match in the title outranks one in the body of a
 // description. This is the keyword half of the Phase 8 hybrid search.
@@ -111,6 +166,9 @@ linkSchema.methods.toPublicJSON = function toPublicJSON() {
     favicon: this.favicon,
     thumbnail: this.thumbnail,
     tags: this.tags,
+    // The client greys these out so a generated tag is visibly not a typed one.
+    autoTags: this.autoTags,
+    tagsEditedByUser: this.tagsEditedByUser,
     collectionId: this.collectionId ? this.collectionId.toString() : null,
     isFavorite: this.isFavorite,
     isRead: this.isRead,
@@ -119,6 +177,12 @@ linkSchema.methods.toPublicJSON = function toPublicJSON() {
     // beside the retry action.
     processingError: this.processingError,
     processedAt: this.processedAt,
+    // Deliberately exposed without an error string: §8 of the Phase 5 plan.
+    // A failed enrichment is not something to show the user as a broken link,
+    // so the client only ever uses this to decide whether to show a "writing a
+    // summary" hint.
+    enrichmentStatus: this.enrichmentStatus,
+    enrichedAt: this.enrichedAt,
     savedAt: this.savedAt,
     updatedAt: this.updatedAt,
   };

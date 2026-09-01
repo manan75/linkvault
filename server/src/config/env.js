@@ -27,7 +27,7 @@ const envSchema = z.object({
   // a fresh clone runs the whole product without an OpenAI account. Startup
   // says so out loud rather than leaving links silently un-enriched.
   OPENAI_API_KEY: z.string().min(1).optional(),
-  OPENAI_MODEL: z.string().default('gpt-5.6-luna'),
+  OPENAI_MODEL: z.string().default('gpt-5-mini'),
   ENABLE_ENRICHMENT: z.enum(['true', 'false']).optional(),
 });
 
