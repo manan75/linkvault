@@ -1,4 +1,20 @@
-const API_BASE = '/api';
+/**
+ * Where the API lives.
+ *
+ * Unset -- which is every local run -- this stays `/api` and the Vite dev proxy
+ * makes the call same-origin, so nothing about cookies needs thinking about.
+ *
+ * In production there is no proxy: the client is served from Vercel and the API
+ * from Render, so this is set at build time to the full API base including the
+ * `/api` prefix (`https://<service>.onrender.com/api`). That makes every request
+ * cross-site, which is why the session cookie is `sameSite: 'none'` and why
+ * `CLIENT_ORIGIN` on the server has to name this exact origin.
+ *
+ * Read through `import.meta.env`, so the value is baked into the bundle at build
+ * time rather than read at runtime -- changing it means a redeploy of the client,
+ * not a restart.
+ */
+const API_BASE = (import.meta.env.VITE_API_BASE ?? '/api').replace(/\/+$/, '');
 
 /** Error carrying the status and field-level details returned by the API. */
 export class ApiRequestError extends Error {
