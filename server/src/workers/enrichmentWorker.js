@@ -5,6 +5,7 @@ import {
   hasEnoughToEnrich,
 } from '../services/enrichment.js';
 import { listTags } from '../services/linkService.js';
+import { createDrain } from './drain.js';
 import {
   claimForEnrichment,
   completeEnrichment,
@@ -30,6 +31,8 @@ export function createEnrichmentWorker({
   loadVocabulary = listTags,
   logger = console,
 } = {}) {
+  const drain = createDrain();
+
   /**
    * Handles one `metadata.extracted` event.
    *
@@ -37,7 +40,7 @@ export function createEnrichmentWorker({
    * visible: a second delivery of the same event returns false because the
    * claim matches nothing.
    */
-  async function handle({ linkId }) {
+  async function runOne({ linkId }) {
     const link = await claimForEnrichment(linkId);
 
     // Already enriched, already skipped, or claimed by another consumer. This
@@ -99,6 +102,16 @@ export function createEnrichmentWorker({
     }
   }
 
+  /**
+   * The subscribed handler. Declines new work while draining, which matters
+   * more here than for extraction: not starting a call is the difference
+   * between a clean shutdown and one that pays for a summary it throws away.
+   */
+  async function handle(payload) {
+    if (drain.draining) return false;
+    return drain.track(() => runOne(payload));
+  }
+
   return {
     handle,
 
@@ -108,6 +121,11 @@ export function createEnrichmentWorker({
         groupId: 'enrichment-worker',
         handler: handle,
       });
+    },
+
+    /** Waits for the model call in flight, so its result is written, not wasted. */
+    async stop() {
+      await drain.drain();
     },
   };
 }

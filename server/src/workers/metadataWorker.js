@@ -1,6 +1,7 @@
 import { TOPICS } from '../events/topics.js';
 import { decodeHtml, parseMetadata } from '../services/metadataParser.js';
 import { safeFetch } from '../services/safeFetch.js';
+import { createDrain } from './drain.js';
 import { claimForProcessing, completeLink, failLink } from './linkQueue.js';
 
 /**
@@ -20,6 +21,8 @@ export function createMetadataWorker({
   fetchPage = safeFetch,
   logger = console,
 } = {}) {
+  const drain = createDrain();
+
   /**
    * Handles one `link.created` event.
    *
@@ -27,7 +30,7 @@ export function createMetadataWorker({
    * redelivery visible: a second delivery of the same event returns false
    * because the claim matches nothing.
    */
-  async function handle({ linkId }) {
+  async function runOne({ linkId }) {
     const link = await claimForProcessing(linkId);
 
     // Already processed, or claimed by another consumer. Kafka is at-least-once
@@ -79,6 +82,16 @@ export function createMetadataWorker({
     }
   }
 
+  /**
+   * The subscribed handler. Declines new work once shutdown has begun: the link
+   * is still `pending` at this point, so the reaper simply publishes it again
+   * on the next process's first sweep. Nothing is lost by not starting.
+   */
+  async function handle(payload) {
+    if (drain.draining) return false;
+    return drain.track(() => runOne(payload));
+  }
+
   return {
     handle,
 
@@ -88,6 +101,11 @@ export function createMetadataWorker({
         groupId: 'metadata-worker',
         handler: handle,
       });
+    },
+
+    /** Waits for the page currently being fetched, rather than dropping it. */
+    async stop() {
+      await drain.drain();
     },
   };
 }

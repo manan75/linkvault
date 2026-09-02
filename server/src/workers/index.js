@@ -1,6 +1,7 @@
-import { connectDatabase } from '../config/db.js';
+import { connectDatabase, disconnectDatabase } from '../config/db.js';
 import { env } from '../config/env.js';
 import { eventBus } from '../events/index.js';
+import { createShutdown, listenForShutdown } from '../utils/shutdown.js';
 import { enrichmentWorker, metadataWorker } from './runtime.js';
 
 /**
@@ -52,14 +53,22 @@ async function start() {
   }
 }
 
-async function shutdown(signal) {
-  console.log(`\n${signal} received, disconnecting…`);
-  await eventBus.stop();
-  process.exit(0);
-}
+/**
+ * The same wind-down as the API's, minus the halves this process does not own:
+ * there is no HTTP server here and no reaper. Draining the consumers still
+ * matters just as much -- more, in fact, since this is the process actually
+ * doing the fetching and the summarising.
+ */
+const shutdown = createShutdown({
+  timeoutMs: env.SHUTDOWN_TIMEOUT_MS,
+  steps: [
+    () => Promise.allSettled([metadataWorker.stop(), enrichmentWorker.stop()]),
+    () => eventBus.stop(),
+    () => disconnectDatabase(),
+  ],
+});
 
-process.on('SIGINT', () => shutdown('SIGINT'));
-process.on('SIGTERM', () => shutdown('SIGTERM'));
+listenForShutdown(shutdown);
 
 start().catch((error) => {
   console.error('Failed to start the metadata worker:', error);
