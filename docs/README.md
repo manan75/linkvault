@@ -17,11 +17,13 @@ Read in this order when picking the project back up.
 | [2026-08-30-phase-4-plan.md](./2026-08-30-phase-4-plan.md) | Phase 4 decisions and step plan: Kafka, workers as separate processes |
 | [2026-08-30-phase-4-kafka.md](./2026-08-30-phase-4-kafka.md) | Phase 4: what shipped, three bugs only a real broker could find, what was verified |
 | [2026-09-01-phase-5-plan.md](./2026-09-01-phase-5-plan.md) | Phase 5 decisions and step plan: summary and tag generation, and how the tag vocabulary is kept from drifting |
-| [2026-09-01-phase-5-enrichment.md](./2026-09-01-phase-5-enrichment.md) | Phase 5: what shipped, why the planned model did not exist, and what the real-API run showed. **Start here for the next session.** |
+| [2026-09-01-phase-5-enrichment.md](./2026-09-01-phase-5-enrichment.md) | Phase 5: what shipped, why the planned model did not exist, and what the real-API run showed |
+| [2026-09-02-deployment-and-extension-plan.md](./2026-09-02-deployment-and-extension-plan.md) | Deployment decisions and cost model, the blockers found by auditing the tree, rate limiting, and the Chrome extension plan |
+| [2026-09-02-deploy-v1.md](./2026-09-02-deploy-v1.md) | Deploy v1: what shipped, the cookie decision and what it costs, the spending bounds, graceful shutdown, and the provisioning handover. **Start here for the next session.** |
 
 ---
 
-## State of play (as of 2026-09-01)
+## State of play (as of 2026-09-02)
 
 **Phases 1 to 5 are complete.**
 
@@ -29,7 +31,7 @@ Working: project setup, Express API, MongoDB, authentication, bookmark CRUD, col
 favorites, read/unread, keyword search with filters, the dashboard, URL metadata extraction with
 processing status and retries, the appearance pass (dark mode, accent picker, redesigned link
 list), an event-driven pipeline on Kafka with extraction in its own worker process, and generated
-summaries and tags with tag rename/merge. `server` has 195 passing tests. `client` builds clean.
+summaries and tags with tag rename/merge. `server` has 220 passing tests. `client` builds clean.
 
 Phase 4 was verified against a real broker: two processes, a full broker outage and recovery, a
 worker killed mid-fetch, and the no-broker path. **Three bugs came out of that, none of which the
@@ -61,9 +63,47 @@ so the model correctly declined to invent one — it was told never to guess, an
 were good in every one of those cases. **Capturing a cleaned page excerpt is now an evidence-backed
 open question rather than a hypothetical**, and it matters before Phase 6, which embeds this text.
 
-Next: **Phase 6 — Sentence Transformer embeddings, MongoDB Vector Search, semantic search.** It
-subscribes to `link.enriched`, which the enrichment worker now publishes and nothing consumes yet,
-so it adds a consumer without touching Phase 5's code. Open question 1 below blocks it.
+**Deploy v1 is built and waiting on provisioning.** The hardening shipped on 2026-09-02: graceful
+shutdown that actually closes the server, drains both workers and disconnects Mongo; `helmet`;
+pinned Node 22; a rate limit store behind an interface with a memory implementation; per-IP auth
+limits and a per-user save limit; a per-user bookmark cap and a global daily enrichment ceiling.
+`server` now has **220 passing tests**, and it was run in `NODE_ENV=production` against a real
+mongod, not only tested. Details in the deploy note.
+
+Four decisions there are worth knowing before touching any of it:
+
+- **The session cookie is `sameSite: 'none'` with `secure: true` in production** — the user chose
+  this over the Vercel rewrite the plan recommended. The rewrite question is closed; the price is
+  that **login will not work in Safari or on iOS**, and that `CLIENT_ORIGIN` is now genuinely
+  load-bearing rather than a formality. v1 is Chrome-first on purpose.
+- **Registration stays open**, so the caps are the bound. That is why registration is limited to 5
+  per hour per IP rather than the plan's 10 per 15 minutes: account creation is otherwise the way
+  past every per-user quota.
+- **The two limits that bound money live in MongoDB, not the rate limit store.** The memory store
+  loses its counters on every restart, and a free instance restarts constantly. Throttles can
+  survive that; a spending ceiling cannot.
+- **A spent enrichment budget defers links rather than skipping them.** `skipped` is terminal and
+  means "nothing here worth summarising"; a budget clears at midnight. The reaper also stops
+  publishing enrichment work it cannot pay for, or the backlog would churn all night rediscovering
+  the same refusal.
+
+What remains is dashboard work: Atlas, Render, Vercel, and a cron ping on `/api/health`. Section 7
+of the deploy note is the checklist, including the ordering trap that each side needs the other's
+URL.
+
+Then: **Phase 6 — embeddings, MongoDB Vector Search, semantic search.** It subscribes to
+`link.enriched`, which the enrichment worker now publishes and nothing consumes yet, so it adds a
+consumer without touching Phase 5's code. The embedding runtime is now a live decision rather than
+a settled one — the deployment budget (512MB, one always-warm free service) reopens the Phase 4
+answer of "Python only as a stateless FastAPI embedding service". Three options are laid out in the
+deployment note, section 9.
+
+**The Chrome extension is planned but deliberately deferred until after Phase 6** — `CLAUDE.md`
+lists it under Future Features, and its two best features (omnibox search, page capture feeding
+embeddings) both need semantic search to exist. The one piece being built early is the Bearer-token
+auth path, which is small, self-contained, and unblocks the extension and any future mobile client.
+Notably, the extension's page capture is the evidence-backed answer to open question 2 below: it
+holds the rendered DOM of pages `safeFetch` structurally cannot reach.
 
 The decision worth knowing before reading the code: **tag vocabulary drift is solved by putting the
 user's existing tags in the prompt, not by embedding-similarity matching.** Short-string embeddings
@@ -122,21 +162,34 @@ Setup and commands are in [`../README.md`](../README.md).
 
 ## Open questions, in the order they will be needed
 
-1. **Vector search in local dev** — needed before Phase 6, and now the next thing due. `CLAUDE.md`
-   specifies MongoDB Atlas Vector Search but also plain Docker Compose locally, and the standard
-   `mongo` image does not support Atlas Vector Search. Atlas Local container, or a real Atlas
-   cluster for dev?
-2. **Whether to capture a cleaned page excerpt for enrichment.** New, and evidence-backed rather
+1. **The Phase 6 embedding runtime** — Python and Sentence Transformers on a second free service,
+   `transformers.js` inside the existing Node worker, or a hosted embedding API. New, and it
+   reopens the Phase 4 answer below, because the deployment budget has room for exactly one
+   always-warm free service. Deployment note, section 9.
+2. **Vector search in local dev** — `CLAUDE.md` specifies MongoDB Atlas Vector Search but also plain
+   Docker Compose locally, and the standard `mongo` image does not support Atlas Vector Search.
+   Atlas Local container, or a real Atlas cluster for dev? Deploying to Atlas answers the production
+   half; the local half stays open. Also unresolved: whether a vector index is warranted at v1 scale
+   at all — ten thousand links is about 15MB and a brute-force scan is single-digit milliseconds.
+3. **Whether to capture a cleaned page excerpt for enrichment.** Evidence-backed rather
    than speculative: without one, a page with no `og:description` gets no summary at all. The fix is
    scoped in the Phase 5 plan, section 4 — one function and one schema field — and it matters
    before Phase 6 embeds this text.
-3. **Where Kafka runs in production** — a Phase 9 question, with a real cost attached. Managed
-   (Confluent, Redpanda, MSK) or self-hosted?
-4. **Where enrichment runs in production, and what it costs per user.** The first component with a
-   per-use bill attached; it informs Phase 7's rate-limiting design and the local-model question in
-   section 1 of the Phase 5 plan.
+4. **Where Kafka runs in production** — still a Phase 9 question. The deployment note **defers** it
+   rather than answering it: v1 ships with `ENABLE_KAFKA=false` because no managed Kafka has a
+   durable free tier, and the reaper moves the durability guarantee from the broker to the document.
+   Managed (Confluent, Redpanda, MSK) or self-hosted remains the eventual choice.
+5. **What enrichment costs per user at real volume.** Phase 5 measured about $0.60 per 1,000 links
+   on `gpt-5-mini`, but per-user volume is unknown and deploying is the only way to learn it. It
+   sets the per-user quota and the global daily ceiling in the deployment note, section 7.
+6. **Whether open registration survives contact with the internet.** Answered for v1 -- it stays
+   **open**, with the caps doing the bounding (100 bookmarks per user, 200 enrichments per day
+   globally, 5 registrations per hour per IP). The caps make abuse expensive rather than
+   impossible; closing registration remains the strongest single protection if it is ever needed.
+7. **When Safari stops being acceptable.** New, and a direct consequence of the cookie decision.
+   The fix already exists on paper: the Bearer-token path planned for after Phase 6.
 
-All four are architectural and deserve the `CLAUDE.md` "Important Rule" treatment: state the
+All seven are architectural and deserve the `CLAUDE.md` "Important Rule" treatment: state the
 problem, why the current setup is insufficient, what alternatives exist, and why the choice is
 right.
 

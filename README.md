@@ -7,9 +7,14 @@ See [`CLAUDE.md`](./CLAUDE.md) for the full product spec and architecture.
 
 ## Status
 
-**Phase 5 complete** — everything from Phase 4, plus generated summaries and tags.
-A second worker consumes `metadata.extracted`, asks a model for a short summary and
-up to five tags, and writes them back. Embeddings and semantic search are next.
+**Phase 5 complete, and hardened for deployment** — everything from Phase 4, plus
+generated summaries and tags. A second worker consumes `metadata.extracted`, asks a
+model for a short summary and up to five tags, and writes them back.
+
+The deployment pass on top of it added rate limiting, a per-user bookmark cap, a global
+daily enrichment ceiling, `helmet`, and a graceful shutdown that drains both workers
+rather than severing them. See [`docs/2026-09-02-deploy-v1.md`](./docs/2026-09-02-deploy-v1.md).
+Embeddings and semantic search are next.
 
 ## Layout
 
@@ -185,3 +190,27 @@ that someone else's link exists.
 
 The session is a JWT in an `httpOnly` cookie, so page scripts cannot read it and
 logout is a real server-side action.
+
+In production the cookie is `Secure` and `SameSite=None`, because the client is served
+from a different domain than the API. That makes it a third-party cookie: **Safari and
+iOS browsers block it, so v1 is Chrome-first.** A Bearer-token path is planned after
+Phase 6 and removes the constraint. It also makes `CLIENT_ORIGIN` load-bearing rather
+than decorative — it must name the client's exact origin.
+
+## Limits
+
+Registration is open, so the caps are what bound cost and abuse:
+
+| Limit | Value | Scope |
+| --- | --- | --- |
+| Sign-in attempts | 10 / 15 min | per IP |
+| Registrations | 5 / hour | per IP |
+| Link saves | 20 / hour | per user |
+| Bookmarks | `MAX_LINKS_PER_USER` (100) | per user |
+| Enrichment calls | `ENRICHMENT_DAILY_LIMIT` (200) | global, per day |
+
+The first three are throttles and live in memory. The last two bound real money and live
+in MongoDB, so they survive the restarts a free instance does constantly. Over the daily
+ceiling, links wait at `pending` and are enriched the next day rather than abandoned;
+saving a URL already in the library still works at the bookmark cap, because it creates
+nothing.
