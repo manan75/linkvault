@@ -1,11 +1,196 @@
 @import 'tailwindcss';
 
+/*
+  Two layers of variables.
+
+  `--lv-*` hold the actual values and are redeclared per theme and per accent
+  below. `@theme inline` maps them into Tailwind, and `inline` is what makes it
+  work: it compiles `bg-surface` to `var(--lv-surface)` rather than baking the
+  light value into the stylesheet, so switching `data-theme` at runtime
+  repaints without a rebuild.
+*/
+@theme inline {
+  --color-canvas: var(--lv-canvas);
+  --color-surface: var(--lv-surface);
+  --color-surface-muted: var(--lv-surface-muted);
+  --color-surface-sunken: var(--lv-surface-sunken);
+
+  --color-line: var(--lv-line);
+  --color-line-strong: var(--lv-line-strong);
+
+  --color-ink: var(--lv-ink);
+  --color-ink-muted: var(--lv-ink-muted);
+  --color-ink-faint: var(--lv-ink-faint);
+
+  --color-accent: var(--lv-accent);
+  --color-accent-hover: var(--lv-accent-hover);
+  --color-accent-soft: var(--lv-accent-soft);
+  --color-accent-ink: var(--lv-accent-ink);
+  --color-accent-text: var(--lv-accent-text);
+
+  --color-danger: var(--lv-danger);
+  --color-danger-soft: var(--lv-danger-soft);
+  --color-danger-ink: var(--lv-danger-ink);
+
+  --color-warn-soft: var(--lv-warn-soft);
+  --color-warn-ink: var(--lv-warn-ink);
+}
+
+/*
+  Light is the base. `[data-theme='dark']` is set on <html> by the inline script
+  in index.html before React mounts -- see usePreferences for who writes it.
+*/
+:root {
+  color-scheme: light;
+
+  --lv-canvas: oklch(0.984 0.002 265);
+  --lv-surface: oklch(1 0 0);
+  --lv-surface-muted: oklch(0.962 0.003 265);
+  --lv-surface-sunken: oklch(0.936 0.004 265);
+
+  --lv-line: oklch(0.905 0.005 265);
+  --lv-line-strong: oklch(0.83 0.008 265);
+
+  --lv-ink: oklch(0.23 0.014 265);
+  --lv-ink-muted: oklch(0.5 0.014 265);
+  --lv-ink-faint: oklch(0.64 0.012 265);
+
+  --lv-danger: oklch(0.55 0.2 25);
+  --lv-danger-soft: oklch(0.96 0.02 25);
+  --lv-danger-ink: oklch(0.47 0.19 25);
+
+  --lv-warn-soft: oklch(0.96 0.04 85);
+  --lv-warn-ink: oklch(0.42 0.09 75);
+
+  /* Lightness stops the accent is mixed at. Dark mode lifts them. */
+  --lv-accent-l: 0.52;
+  --lv-accent-l-hover: 0.45;
+  --lv-accent-l-soft: 0.95;
+  --lv-accent-l-text: 0.5;
+  --lv-accent-c-soft: 0.35;
+  --lv-accent-ink: oklch(0.99 0 0);
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  --lv-canvas: oklch(0.18 0.008 265);
+  --lv-surface: oklch(0.225 0.01 265);
+  --lv-surface-muted: oklch(0.27 0.012 265);
+  --lv-surface-sunken: oklch(0.32 0.014 265);
+
+  --lv-line: oklch(0.32 0.012 265);
+  --lv-line-strong: oklch(0.42 0.014 265);
+
+  --lv-ink: oklch(0.95 0.004 265);
+  --lv-ink-muted: oklch(0.72 0.012 265);
+  --lv-ink-faint: oklch(0.58 0.012 265);
+
+  --lv-danger: oklch(0.68 0.17 25);
+  --lv-danger-soft: oklch(0.29 0.06 25);
+  --lv-danger-ink: oklch(0.82 0.1 25);
+
+  --lv-warn-soft: oklch(0.3 0.05 80);
+  --lv-warn-ink: oklch(0.87 0.07 85);
+
+  --lv-accent-l: 0.58;
+  --lv-accent-l-hover: 0.65;
+  --lv-accent-l-soft: 0.32;
+  --lv-accent-l-text: 0.76;
+  --lv-accent-c-soft: 0.5;
+  --lv-accent-ink: oklch(0.16 0.01 265);
+}
+
+/*
+  Each accent contributes only a hue and a chroma; the lightness stops come from
+  the theme above. Six presets, one three-line block each, and both themes stay
+  legible without hand-tuning twelve palettes.
+*/
+:root,
+:root[data-accent='slate'] {
+  --lv-accent-h: 265;
+  --lv-accent-c: 0.03;
+}
+:root[data-accent='blue'] {
+  --lv-accent-h: 255;
+  --lv-accent-c: 0.16;
+}
+:root[data-accent='violet'] {
+  --lv-accent-h: 300;
+  --lv-accent-c: 0.15;
+}
+:root[data-accent='emerald'] {
+  --lv-accent-h: 160;
+  --lv-accent-c: 0.13;
+}
+:root[data-accent='amber'] {
+  --lv-accent-h: 65;
+  --lv-accent-c: 0.14;
+}
+:root[data-accent='rose'] {
+  --lv-accent-h: 15;
+  --lv-accent-c: 0.16;
+}
+
+:root {
+  --lv-accent: oklch(var(--lv-accent-l) var(--lv-accent-c) var(--lv-accent-h));
+  --lv-accent-hover: oklch(var(--lv-accent-l-hover) var(--lv-accent-c) var(--lv-accent-h));
+  --lv-accent-soft: oklch(
+    var(--lv-accent-l-soft) calc(var(--lv-accent-c) * var(--lv-accent-c-soft)) var(--lv-accent-h)
+  );
+  --lv-accent-text: oklch(var(--lv-accent-l-text) var(--lv-accent-c) var(--lv-accent-h));
+}
+
 @layer base {
-  html {
-    color-scheme: light;
+  body {
+    @apply bg-canvas text-ink antialiased;
   }
 
-  body {
-    @apply bg-slate-50 text-slate-900 antialiased;
+  /* One focus treatment everywhere, in the user's accent. */
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-accent;
+  }
+}
+
+@layer components {
+  /*
+    Shared control chrome. Inputs and selects appear in five components; the
+    theme pass would otherwise mean five copies of the same six utilities.
+  */
+  .lv-field {
+    @apply rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none transition;
+    @apply placeholder:text-ink-faint focus:border-accent focus:ring-2 focus:ring-accent/20;
+    @apply aria-invalid:border-danger;
+  }
+
+  .lv-button {
+    @apply rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accent-ink transition;
+    @apply hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .lv-button-quiet {
+    @apply rounded-lg border border-line bg-surface px-3 py-1.5 text-sm font-medium text-ink transition;
+    @apply hover:bg-surface-muted;
+  }
+}
+
+/* Pending links shimmer rather than spin: several can be in flight at once. */
+@keyframes lv-pulse-line {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 0.8;
+  }
+}
+
+.lv-shimmer {
+  animation: lv-pulse-line 1.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lv-shimmer {
+    animation: none;
   }
 }
