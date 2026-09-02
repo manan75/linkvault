@@ -29,6 +29,25 @@ const envSchema = z.object({
   OPENAI_API_KEY: z.string().min(1).optional(),
   OPENAI_MODEL: z.string().default('gpt-5-mini'),
   ENABLE_ENRICHMENT: z.enum(['true', 'false']).optional(),
+
+  // Redis. Off means the in-memory rate limit store, which is sufficient while
+  // there is exactly one API process -- see rateLimit/index.js for why the
+  // seam exists before the implementation does.
+  ENABLE_REDIS: z.enum(['true', 'false']).default('false'),
+  REDIS_URL: z.string().min(1).optional(),
+
+  // --- Spending bounds ---
+  //
+  // Registration is open, so a per-user cap is not by itself a bound: anyone
+  // can create more users. These are two different instruments and both are
+  // needed. The per-user cap shapes ordinary use; the daily ceiling is what
+  // actually stands between a script and the OpenAI bill.
+  MAX_LINKS_PER_USER: z.coerce.number().int().positive().default(100),
+  ENRICHMENT_DAILY_LIMIT: z.coerce.number().int().nonnegative().default(200),
+
+  // How long a shutdown may spend closing things before it stops waiting. Render
+  // sends SIGKILL soon after SIGTERM, so this must expire well before that.
+  SHUTDOWN_TIMEOUT_MS: z.coerce.number().int().positive().default(10_000),
 });
 
 const parsed = envSchema.safeParse(process.env);
@@ -51,6 +70,7 @@ export const env = {
   ENABLE_ENRICHMENT:
     (parsed.data.ENABLE_ENRICHMENT ?? String(parsed.data.NODE_ENV !== 'test')) === 'true' &&
     Boolean(parsed.data.OPENAI_API_KEY),
+  ENABLE_REDIS: parsed.data.ENABLE_REDIS === 'true',
 };
 
 export const isProduction = env.NODE_ENV === 'production';
