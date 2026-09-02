@@ -1,5 +1,6 @@
 import { env } from '../config/env.js';
 import { eventBus } from '../events/index.js';
+import { enrichmentUsage } from '../services/usage.js';
 import { createEnrichmentWorker } from './enrichmentWorker.js';
 import { createMetadataWorker } from './metadataWorker.js';
 import { createReaper } from './reaper.js';
@@ -21,6 +22,10 @@ export const reaper = createReaper({
   // for it would cycle every link in the library through the queued lease and
   // back for no reason.
   enrichmentEnabled: env.ENABLE_ENRICHMENT,
+  // Stops the sweep publishing enrichment work the daily ceiling will refuse
+  // to pay for. The worker enforces the ceiling; this keeps a spent budget from
+  // turning into a night of pointless database churn.
+  hasEnrichmentBudget: async () => !(await enrichmentUsage()).exhausted,
 });
 
 export const metadataWorker = createMetadataWorker({ bus: eventBus });

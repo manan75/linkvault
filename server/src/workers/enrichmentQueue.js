@@ -180,6 +180,32 @@ export async function skipEnrichment(link, reason) {
 }
 
 /**
+ * Hands a claimed link back untouched, for a refusal that is about us rather
+ * than about the link.
+ *
+ * The only caller is the daily spending ceiling, and the distinction from
+ * `skipEnrichment` is the whole reason this exists. Skipping is terminal and
+ * means "there is nothing here worth summarising", which stays true forever. A
+ * budget being spent is a condition of today, and it clears at midnight, so
+ * marking those links `skipped` would permanently abandon a queue that merely
+ * needed to wait.
+ *
+ * The attempt is given back as well. The retry ladder exists to stop hammering
+ * something that is failing; this link has not failed and has not been tried,
+ * and letting a busy afternoon exhaust its attempts would strand it for reasons
+ * that have nothing to do with the link.
+ */
+export async function deferEnrichment(link, reason) {
+  link.enrichmentStatus = 'pending';
+  link.enrichmentError = reason;
+  link.enrichmentQueuedAt = null;
+  link.enrichmentAttempts = Math.max(0, link.enrichmentAttempts - 1);
+
+  await link.save();
+  return link;
+}
+
+/**
  * Records a failure, deciding whether it is worth another go.
  *
  * Same policy as extraction, read off the classification `services/enrichment.js`

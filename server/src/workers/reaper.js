@@ -57,11 +57,25 @@ export function createReaper({
    * queued lease forever. They are picked up whenever a key appears.
    */
   enrichmentEnabled = true,
+  /**
+   * Whether there is budget left to enrich anything today.
+   *
+   * Injected rather than imported so the reaper keeps knowing nothing about
+   * what enrichment costs. It exists because the ceiling has to be enforced on
+   * the *producer* side as well as the consumer side: the worker refusing to
+   * spend is what protects the bill, but on its own it would leave every link
+   * awaiting enrichment cycling through publish, claim, refuse and release on
+   * every lease expiry -- a backlog grinding out database writes all night to
+   * rediscover the same answer. Not feeding the pipeline is cheaper than
+   * repeatedly declining to feed on it.
+   */
+  hasEnrichmentBudget = async () => true,
   logger = console,
 } = {}) {
   let timer = null;
   let isTicking = false;
   let publishPausedUntil = 0;
+  let budgetExhausted = false;
 
   /** Claims one link and publishes it. Returns the link, or null if none was due. */
   async function queueOne() {
@@ -173,7 +187,20 @@ export function createReaper({
     let published = await publishBatch(queueOne);
 
     if (enrichmentEnabled && Date.now() >= publishPausedUntil) {
-      published += await publishBatch(queueOneForEnrichment);
+      const funded = await hasEnrichmentBudget();
+
+      // Logged on the transition rather than on every sweep, which at a
+      // two-second interval would be roughly forty thousand identical lines
+      // between the budget running out and midnight.
+      if (!funded && !budgetExhausted) {
+        logger.warn?.('[reaper] daily enrichment budget spent, holding links until it resets');
+      } else if (funded && budgetExhausted) {
+        logger.log?.('[reaper] enrichment budget available again, resuming');
+      }
+
+      budgetExhausted = !funded;
+
+      if (funded) published += await publishBatch(queueOneForEnrichment);
     }
 
     return published;

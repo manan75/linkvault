@@ -6,6 +6,7 @@ import { ApiError } from '../utils/ApiError.js';
 import { isObjectId } from '../utils/objectId.js';
 import { buildLinkQuery } from './linkQuery.js';
 import { getOwnedCollection } from './collectionService.js';
+import { assertLinkQuota } from './usage.js';
 import { normalizeTag } from '../utils/tags.js';
 
 /** Fields a user may set by hand. Everything else belongs to the pipeline. */
@@ -42,6 +43,13 @@ export async function createLink({ userId, url, collectionId }) {
 
     return { link: existing, created: false, moved };
   }
+
+  // Checked here rather than at the top of the function, so that re-saving a
+  // URL already in the library still works at the cap. A user at their limit
+  // pasting something they saved months ago is not creating anything, and
+  // refusing them would make the cap feel like a broken app rather than a
+  // limit -- the product exists for people who do not remember what they saved.
+  await assertLinkQuota(userId);
 
   try {
     const link = await Link.create({

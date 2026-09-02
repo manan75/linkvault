@@ -5,10 +5,12 @@ import {
   hasEnoughToEnrich,
 } from '../services/enrichment.js';
 import { listTags } from '../services/linkService.js';
+import { reserveEnrichment } from '../services/usage.js';
 import { createDrain } from './drain.js';
 import {
   claimForEnrichment,
   completeEnrichment,
+  deferEnrichment,
   failEnrichment,
   skipEnrichment,
 } from './enrichmentQueue.js';
@@ -29,6 +31,7 @@ export function createEnrichmentWorker({
   bus,
   enrich = callProvider,
   loadVocabulary = listTags,
+  reserveBudget = reserveEnrichment,
   logger = console,
 } = {}) {
   const drain = createDrain();
@@ -55,6 +58,22 @@ export function createEnrichmentWorker({
     // temptation there is to invent a summary from the domain name.
     if (!hasEnoughToEnrich(input)) {
       await skipEnrichment(link, 'Not enough page information to summarise');
+      return true;
+    }
+
+    // The last gate before money is spent, and the order matters: after the
+    // claim, so a redelivered event cannot consume budget for work it will not
+    // do, and after the skip check, so links with nothing to summarise are not
+    // charged against a ceiling they were never going to reach.
+    const budget = await reserveBudget();
+
+    if (!budget.allowed) {
+      // Back to `pending`, not `skipped`. See `deferEnrichment` -- the budget
+      // clears at midnight and these links are owed an attempt, not a verdict.
+      await deferEnrichment(link, 'Daily enrichment limit reached; will retry');
+      logger.warn?.(
+        `[enrichment] daily limit of ${budget.limit} reached, deferring ${link.id}`,
+      );
       return true;
     }
 
