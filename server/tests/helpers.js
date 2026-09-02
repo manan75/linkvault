@@ -7,6 +7,8 @@ process.env.NODE_ENV = 'test';
 process.env.JWT_SECRET = 'test-secret-value-that-is-long-enough';
 process.env.MONGODB_URI = 'mongodb://placeholder/linkvault-test';
 
+const { rateLimitStore } = await import('../src/rateLimit/index.js');
+
 let memoryServer;
 
 export async function startTestDatabase() {
@@ -23,9 +25,20 @@ export async function stopTestDatabase() {
   await memoryServer?.stop();
 }
 
+/**
+ * Resets everything that carries between tests.
+ *
+ * The rate limit counters belong here as much as the collections do, even
+ * though they are not in the database. They live in one process-wide store
+ * keyed by IP, every test in the suite arrives from the same address, and the
+ * registration limit is deliberately low -- so without this the sixth test to
+ * sign a user up would get a 429 and fail for a reason that has nothing to do
+ * with what it is testing.
+ */
 export async function clearTestDatabase() {
   const { collections } = mongoose.connection;
   await Promise.all(Object.values(collections).map((collection) => collection.deleteMany({})));
+  rateLimitStore.clear();
 }
 
 /** Extracts the session cookie from a supertest response, if one was set. */
