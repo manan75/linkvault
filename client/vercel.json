@@ -2,7 +2,6 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "rewrites": [
     {
-      "comment": "Client-side routing. Vercel serves a real file when one matches, so this only catches paths the build has no file for -- /dashboard on a hard refresh, for example, which would otherwise 404. There is deliberately no /api rewrite here: the client talks to Render directly, which is what makes the session cookie cross-site and sameSite 'none' necessary.",
       "source": "/(.*)",
       "destination": "/index.html"
     }
