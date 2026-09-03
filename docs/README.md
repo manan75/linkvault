@@ -19,13 +19,14 @@ Read in this order when picking the project back up.
 | [2026-09-01-phase-5-plan.md](./2026-09-01-phase-5-plan.md) | Phase 5 decisions and step plan: summary and tag generation, and how the tag vocabulary is kept from drifting |
 | [2026-09-01-phase-5-enrichment.md](./2026-09-01-phase-5-enrichment.md) | Phase 5: what shipped, why the planned model did not exist, and what the real-API run showed |
 | [2026-09-02-deployment-and-extension-plan.md](./2026-09-02-deployment-and-extension-plan.md) | Deployment decisions and cost model, the blockers found by auditing the tree, rate limiting, and the Chrome extension plan |
-| [2026-09-02-deploy-v1.md](./2026-09-02-deploy-v1.md) | Deploy v1: what shipped, the cookie decision and what it costs, the spending bounds, graceful shutdown, and the provisioning handover. **Start here for the next session.** |
+| [2026-09-02-deploy-v1.md](./2026-09-02-deploy-v1.md) | Deploy v1: what shipped, the cookie decision and what it costs, the spending bounds, graceful shutdown, and the provisioning handover |
+| [2026-09-03-deploy-v1-live.md](./2026-09-03-deploy-v1-live.md) | Deploy v1 is live: what the dashboards actually needed, the sites that block a datacenter IP, the URL-derived title fallback, and the fix list and extension path for next time. **Start here for the next session.** |
 
 ---
 
-## State of play (as of 2026-09-02)
+## State of play (as of 2026-09-03)
 
-**Phases 1 to 5 are complete.**
+**Phases 1 to 5 are complete, and v1 is deployed and reachable.**
 
 Working: project setup, Express API, MongoDB, authentication, bookmark CRUD, collections, tags,
 favorites, read/unread, keyword search with filters, the dashboard, URL metadata extraction with
@@ -87,9 +88,20 @@ Four decisions there are worth knowing before touching any of it:
   publishing enrichment work it cannot pay for, or the backlog would churn all night rediscovering
   the same refusal.
 
-What remains is dashboard work: Atlas, Render, Vercel, and a cron ping on `/api/health`. Section 7
-of the deploy note is the checklist, including the ordering trap that each side needs the other's
-URL.
+**Deploy v1 went live on 2026-09-03.** Atlas, Render and Vercel are provisioned and the app works end
+to end in Chrome. The cron ping on `/api/health` is the one checklist item still outstanding. Six
+provisioning traps are written up in the live note, section 2 — the sharpest being that **the Atlas
+connection string carries no database name**, so without `/linkvault` appended by hand everything
+silently lands in a database called `test`.
+
+**The finding of the deployment is that the network origin changes what the internet returns.**
+YouTube serves 200 to a residential IP and **429 to Render**, whose free instances share outbound IPs
+across tenants; LeetCode returns **403 to everything**, browser User-Agent included, matching on TLS
+fingerprint rather than identity. Identical code, identical URL, different answer — a sharper variant
+of the theme above, and one nothing runnable on the development machine could have produced. The
+response so far is `titleFromUrl`, which names an unfetchable link from its path (`/problems/two-sum/`
+→ "Two Sum") rather than showing the bare domain the line beneath already repeats. The real answers —
+an oEmbed pre-step, and extension page capture — are both listed in the live note, section 5.
 
 Then: **Phase 6 — embeddings, MongoDB Vector Search, semantic search.** It subscribes to
 `link.enriched`, which the enrichment worker now publishes and nothing consumes yet, so it adds a
@@ -98,12 +110,20 @@ a settled one — the deployment budget (512MB, one always-warm free service) re
 answer of "Python only as a stateless FastAPI embedding service". Three options are laid out in the
 deployment note, section 9.
 
-**The Chrome extension is planned but deliberately deferred until after Phase 6** — `CLAUDE.md`
-lists it under Future Features, and its two best features (omnibox search, page capture feeding
-embeddings) both need semantic search to exist. The one piece being built early is the Bearer-token
-auth path, which is small, self-contained, and unblocks the extension and any future mobile client.
-Notably, the extension's page capture is the evidence-backed answer to open question 2 below: it
-holds the rendered DOM of pages `safeFetch` structurally cannot reach.
+**The Chrome extension is the user's stated next direction, and the deployment changed the case for
+it.** The plan deferred the whole extension until after Phase 6, which still holds for **omnibox
+search** — that cannot exist before semantic search does. But **page capture never needed Phase 6**,
+and production has now given it a second, independent justification: beyond paywalls, logins and
+JavaScript-rendered pages, capture is the only thing that reaches **sites which refuse this server
+because of where it is calling from**. It runs from the user's own IP and session, so YouTube's 429
+and LeetCode's 403 stop applying. It also remains the evidence-backed answer to open question 3.
+
+The order proposed for next session: **Bearer-token auth path** (small, self-contained, already the
+sanctioned early piece, and the eventual answer to Safari), then the **extension skeleton with
+capture**, then Phase 6, then omnibox. Capture before Phase 6 deviates from the plan's ordering and
+deserves the `CLAUDE.md` Important Rule treatment when proposed — the argument is now evidence rather
+than speculation. First blocker to clear: `express.json({ limit: '100kb' })` rejects a capture
+payload, and the fix is a per-route limit, not a global one.
 
 The decision worth knowing before reading the code: **tag vocabulary drift is solved by putting the
 user's existing tags in the prompt, not by embedding-similarity matching.** Short-string embeddings
@@ -119,15 +139,21 @@ judge against. Collections stayed manual through Phase 5, confirmed again with t
 ## Local environment
 
 `.env` exists at the repo root and is gitignored. It holds a **development-only**
-`JWT_SECRET` that must be replaced before anything real.
+`JWT_SECRET`, which stays development-only: production has its own freshly generated value set on
+Render, and the two are unrelated. `MONGODB_URI` now points at Atlas rather than the local Docker
+mongo, and **must end in `/linkvault`** — the string Atlas hands out has no database name, and
+without one Mongoose silently uses a database called `test`.
 
 `OPENAI_API_KEY` is set. It was originally added as `OPEN_API_KEY` — a typo that disables
 enrichment **silently**, since a missing key is a supported configuration — and has been renamed.
-`OPENAI_MODEL` is `gpt-5-mini`.
+`OPENAI_MODEL` is `gpt-5-mini`. **The key was exposed in a chat transcript on 2026-09-03** via an
+editor selection; it never reached git, rotating it was suggested, and whether that happened is
+unknown. Treat it as unrotated until confirmed.
 
 The `linkvault` database holds the user's own account and links, plus **one account created by the
 Phase 5 end-to-end run** (`phase5-<timestamp>@example.com`, four links), left in place as evidence
-of the verification and safe to delete.
+of the verification and safe to delete. That is the **local** database; Atlas holds its own separate
+copy created during the deployment.
 
 `ENABLE_METADATA_WORKER` controls the pipeline. Left unset it is on everywhere except tests, where
 a background loop racing the assertions would make the suite non-deterministic.
@@ -188,8 +214,18 @@ Setup and commands are in [`../README.md`](../README.md).
    impossible; closing registration remains the strongest single protection if it is ever needed.
 7. **When Safari stops being acceptable.** New, and a direct consequence of the cookie decision.
    The fix already exists on paper: the Bearer-token path planned for after Phase 6.
+8. **Whether oEmbed survives Render's IP.** New. It is measured and useful from a residential IP —
+   868 bytes of JSON carrying title, author and thumbnail — but it is the same `youtube.com` host
+   that already returns 429 on the watch page. Untestable except by deploying.
+9. **Whether a shared datacenter IP is tolerable at all.** New. If enough popular domains throttle
+   Render free, the answer is either capture, which sidesteps the question entirely, or paid hosting
+   with a dedicated egress IP. Fly.io is already named as the first upgrade to buy; this is a second,
+   independent reason to buy it.
+10. **How many saved links the blocking actually affects.** New. Two domains are known bad, which is
+    an impression, not a number. The `processingError` strings on `failed` links are the record that
+    would settle it, and it decides how urgent the oEmbed and capture work really is.
 
-All seven are architectural and deserve the `CLAUDE.md` "Important Rule" treatment: state the
+All ten are architectural and deserve the `CLAUDE.md` "Important Rule" treatment: state the
 problem, why the current setup is insufficient, what alternatives exist, and why the choice is
 right.
 
