@@ -1,5 +1,6 @@
 import { useState } from 'react';
 
+import { prettyUrl, titleFromUrl } from '../lib/titleFromUrl';
 import { LinkEditor } from './LinkEditor';
 
 const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' });
@@ -117,6 +118,12 @@ export function LinkCard({ link, collections, onUpdate, onDelete, onRetry, onTag
   // 'queued' means published to the event log and waiting for a worker; from
   // the reader's point of view it is indistinguishable from the other two.
   const isProcessing = ['pending', 'queued', 'processing'].includes(link.processingStatus);
+
+  // Extraction failed or found nothing, so fall back to what the address itself
+  // says. The bare domain used to go here, which told the reader nothing the
+  // line underneath was not already showing -- every leetcode.com bookmark
+  // looked identical.
+  const fallbackTitle = titleFromUrl(link.url) ?? prettyUrl(link.url);
   const collection = collections.find((entry) => entry.id === link.collectionId);
 
   const run = (action) => async () => {
@@ -166,7 +173,7 @@ export function LinkCard({ link, collections, onUpdate, onDelete, onRetry, onTag
                   rel="noreferrer noopener"
                   className="min-w-0 truncate underline-offset-4 hover:underline"
                 >
-                  {link.title || (isProcessing ? <TitleShimmer /> : link.domain)}
+                  {link.title || (isProcessing ? <TitleShimmer /> : fallbackTitle)}
                 </a>
               </h3>
 
