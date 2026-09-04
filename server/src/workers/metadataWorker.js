@@ -1,6 +1,7 @@
 import { TOPICS } from '../events/topics.js';
 import { fieldsFromCapture } from '../services/captureParser.js';
 import { decodeHtml, parseMetadata } from '../services/metadataParser.js';
+import { fetchOembed } from '../services/oembed.js';
 import { safeFetch } from '../services/safeFetch.js';
 import { createDrain } from './drain.js';
 import { claimForProcessing, completeLink, failLink } from './linkQueue.js';
@@ -28,6 +29,7 @@ const isHtml = (contentType) => /^\s*(text\/html|application\/xhtml\+xml)/i.test
 export function createMetadataWorker({
   bus,
   fetchPage = safeFetch,
+  askProvider = fetchOembed,
   logger = console,
 } = {}) {
   const drain = createDrain();
@@ -64,14 +66,24 @@ export function createMetadataWorker({
     if (!link) return false;
 
     try {
-      // The extension already saw this page, from the user's own address and
-      // their own session. That is not an optimisation: production returns 429
-      // for YouTube and 403 for LeetCode to this server whatever it sends, and
-      // no server-side technique reaches a page behind a login at all. When a
-      // capture is present it is the better source, not the fallback.
-      const fields = link.capture
-        ? fieldsFromCapture(link.capture)
-        : await fetchAndParse(link);
+      // Three sources, most authoritative first.
+      //
+      // A capture is the extension reporting what the user's own browser saw,
+      // from their address and their session. That is not an optimisation:
+      // production returns 429 for YouTube and 403 for LeetCode to this server
+      // whatever it sends, and no server-side technique reaches a page behind a
+      // login at all.
+      //
+      // oEmbed is the provider answering a published API instead of us scraping
+      // it -- 868 bytes for a YouTube video against 1.3MB of HTML that 429s.
+      // Deliberately not merged with a page fetch to fill in the description it
+      // does not carry: the providers worth asking are precisely the ones that
+      // refuse this server, so the second request would usually fail, and would
+      // spend a fetch and a share of the lease learning that.
+      const fields =
+        (link.capture ? fieldsFromCapture(link.capture) : null) ??
+        (await askProvider(link.url)) ??
+        (await fetchAndParse(link));
 
       await completeLink(link, fields);
 
