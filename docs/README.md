@@ -21,7 +21,8 @@ Read in this order when picking the project back up.
 | [2026-09-02-deployment-and-extension-plan.md](./2026-09-02-deployment-and-extension-plan.md) | Deployment decisions and cost model, the blockers found by auditing the tree, rate limiting, and the Chrome extension plan |
 | [2026-09-02-deploy-v1.md](./2026-09-02-deploy-v1.md) | Deploy v1: what shipped, the cookie decision and what it costs, the spending bounds, graceful shutdown, and the provisioning handover |
 | [2026-09-03-deploy-v1-live.md](./2026-09-03-deploy-v1-live.md) | Deploy v1 is live: what the dashboards actually needed, the sites that block a datacenter IP, the URL-derived title fallback, and the fix list and extension path for next time |
-| [2026-09-04-extension.md](./2026-09-04-extension.md) | The title and tagging fixes, bearer tokens, page capture ahead of Phase 6 and its Important Rule argument, and the Chrome Web Store deployment checklist. **Start here for the next session.** |
+| [2026-09-04-extension.md](./2026-09-04-extension.md) | The title and tagging fixes, bearer tokens, page capture ahead of Phase 6 and its Important Rule argument, and the Chrome Web Store deployment checklist |
+| [2026-09-04-next-steps.md](./2026-09-04-next-steps.md) | oEmbed, gzip and the deep health check; why "search is bad" is two problems living in different places; and the extension / v1-fixes / Phase 6 decision to be talked through. **Start here for the next session.** |
 
 ---
 
@@ -34,7 +35,7 @@ favorites, read/unread, keyword search with filters, the dashboard, URL metadata
 processing status and retries, the appearance pass (dark mode, accent picker, redesigned link
 list), an event-driven pipeline on Kafka with extraction in its own worker process, and generated
 summaries and tags with tag rename/merge, bearer-token auth, and a Chrome extension that saves the
-current tab with a capture of the page. `server` has 248 passing tests. `client` builds clean.
+current tab with a capture of the page. `server` has 273 passing tests. `client` builds clean.
 
 Phase 4 was verified against a real broker: two processes, a full broker outage and recovery, a
 worker killed mid-fetch, and the no-broker path. **Three bugs came out of that, none of which the
@@ -119,6 +120,22 @@ wasted the card's headline on the line beneath it and permanently blocked the re
 `completeLink` only fills an empty field. And auto-tags are capped at three rather than five, with a
 deterministic guard that drops a tag which only narrows one already kept: `instagram` +
 `instagram-reel` + `kpop` + `kpop-idol` was real output.
+
+**Extraction now has three sources, tried in order: capture, oEmbed, then the page.** oEmbed is how
+Discord and Slack get a YouTube title and thumbnail, and it is the answer to the datacenter-IP
+problem for the providers that publish one -- 868 bytes of JSON against a 1.3MB watch page that
+answers 429 from Render. `safeFetch` also accepts compression now, cutting the wire by 4-6x, with
+the size cap moved onto the *inflated* bytes so the guarantee `identity` protected is kept rather
+than dropped. And `/api/health/deep` reports whether MongoDB actually answers, kept separate from
+the keep-warm `/api/health` so a platform check cannot restart the service during an Atlas blip.
+
+**The next session opens on a three-way decision** -- finish the Chrome Web Store submission, fix v1
+(search and UI), or start Phase 6 -- and the 2026-09-04 next-steps note carries the measurements it
+needs. The headline finding there: **"search is bad" is two separate problems.** Ranking and recall
+is Phase 6 and cannot be fixed in v1 (`"make my backend snappier"` returns zero hits for a document
+about Redis caching). Efficiency is a one-line index change worth doing regardless: the text index
+carries no `userId` prefix, so a search returning 20 links reads **2,020 index keys and 4,040
+documents** across every user's data, twice per request.
 
 Then: **Phase 6 — embeddings, MongoDB Vector Search, semantic search.** It subscribes to
 `link.enriched`, which the enrichment worker now publishes and nothing consumes yet, so it adds a
