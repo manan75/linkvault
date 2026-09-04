@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import { after, before, describe, it } from 'node:test';
+import zlib from 'node:zlib';
 
 import { createSafeFetch, FetchError, safeFetch } from '../src/services/safeFetch.js';
 import { isBlockedAddress } from '../src/utils/privateAddress.js';
@@ -81,7 +82,7 @@ describe('safeFetch transport', () => {
     assert.equal(result.body.toString(), '<title>Hello</title>');
   });
 
-  it('sends no compressed encoding, so the size cap means something', async () => {
+  it('asks for compression, because the cap is enforced after inflation', async () => {
     let seen;
     handler = (req, res) => {
       seen = req.headers['accept-encoding'];
@@ -90,7 +91,56 @@ describe('safeFetch transport', () => {
 
     await fetchLocal(`${origin}/headers`);
 
-    assert.equal(seen, 'identity');
+    assert.match(seen, /gzip/);
+  });
+
+  it('inflates a gzipped body', async () => {
+    handler = (req, res) => {
+      res.setHeader('Content-Encoding', 'gzip');
+      res.setHeader('Content-Type', 'text/html');
+      res.end(zlib.gzipSync('<title>Compressed</title>'));
+    };
+
+    const result = await fetchLocal(`${origin}/gz`);
+
+    assert.equal(result.body.toString(), '<title>Compressed</title>');
+  });
+
+  it('inflates a deflated body', async () => {
+    handler = (req, res) => {
+      res.setHeader('Content-Encoding', 'deflate');
+      res.end(zlib.deflateSync('<title>Deflated</title>'));
+    };
+
+    assert.equal((await fetchLocal(`${origin}/df`)).body.toString(), '<title>Deflated</title>');
+  });
+
+  it('inflates a brotli body', async () => {
+    handler = (req, res) => {
+      res.setHeader('Content-Encoding', 'br');
+      res.end(zlib.brotliCompressSync('<title>Brotli</title>'));
+    };
+
+    assert.equal((await fetchLocal(`${origin}/br`)).body.toString(), '<title>Brotli</title>');
+  });
+
+  it('caps a body that is small compressed and enormous inflated', async () => {
+    // The reason the request used to ask for `identity`. 10MB of zeroes gzips
+    // to a few kilobytes, so a cap counted on the wire would wave this through
+    // and the process would then assemble all 10MB of it in memory.
+    const bomb = zlib.gzipSync(Buffer.alloc(10 * 1024 * 1024, 0));
+
+    handler = (req, res) => {
+      res.setHeader('Content-Encoding', 'gzip');
+      res.end(bomb);
+    };
+
+    assert.ok(bomb.length < 64 * 1024, 'the compressed payload must be small to prove the point');
+
+    await assert.rejects(fetchLocal(`${origin}/bomb`, { maxBytes: 1024 }), {
+      name: 'FetchError',
+      kind: 'too-large',
+    });
   });
 
   it('follows a redirect and reports the final URL', async () => {

@@ -1,6 +1,7 @@
 import dns from 'node:dns';
 import http from 'node:http';
 import https from 'node:https';
+import zlib from 'node:zlib';
 
 import { isBlockedAddress } from '../utils/privateAddress.js';
 
@@ -15,8 +16,9 @@ import { isBlockedAddress } from '../utils/privateAddress.js';
  *    DNS-rebinding window between check and connect;
  *  - each redirect hop is re-checked, because a public URL is perfectly
  *    entitled to redirect to 169.254.169.254;
- *  - the response size cap is enforced while streaming, not after, so a
- *    multi-gigabyte body cannot exhaust memory before the check runs;
+ *  - the response size cap is enforced while streaming and *after* inflation,
+ *    so neither a multi-gigabyte body nor a small archive that expands into one
+ *    can exhaust memory before the check runs;
  *  - one deadline covers the whole exchange including redirects, so a chain of
  *    individually-fast hops cannot stall a worker indefinitely.
  */
@@ -26,7 +28,15 @@ const DEFAULTS = {
   maxBytes: 2 * 1024 * 1024,
   maxRedirects: 3,
   // Honest about who is calling, and points at a page a site owner could block.
+  //
+  // It stays honest. Sending `Discordbot` or a Chrome string would get past
+  // some of what refuses us, and both are lies about identity told to bypass
+  // access control. Neither would even work on the hard cases: sites that
+  // privilege known crawlers verify them by reverse DNS on the source address,
+  // and LeetCode's 403 was measured against a real Chrome User-Agent and
+  // refused just the same, because it matches on TLS fingerprint.
   userAgent: 'LinkVaultBot/0.1 (+https://github.com/manan75/linkvault)',
+  accept: 'text/html,application/xhtml+xml',
 };
 
 export class FetchError extends Error {
@@ -70,17 +80,54 @@ async function resolveAllowedAddress(hostname, family, isBlocked) {
   return addresses[0];
 }
 
+/**
+ * Wraps the response in a decompressor when the server compressed it.
+ *
+ * The cap is applied to whatever comes *out* of this, never to what went in --
+ * which is the whole reason the request used to ask for `identity`. A byte
+ * limit measured on a compressed stream is not a limit: a few hundred kilobytes
+ * of gzip can inflate into gigabytes, and a zip bomb is a perfectly ordinary
+ * thing for a hostile URL to point at.
+ *
+ * Inflating in a stream rather than after the fact is what makes the guarantee
+ * hold: `readBody` counts decompressed bytes as they arrive and destroys the
+ * source the moment they exceed the cap, so the bomb is never assembled.
+ *
+ * Worth the machinery because the measurement is not marginal. Asking for
+ * `identity` was costing 4x on YouTube (1325KB against 314KB), 5.7x on
+ * Wikipedia and 6x on react.dev, against an 8-second deadline on an instance
+ * with a tenth of a CPU.
+ */
+function decompress(response) {
+  const encoding = String(response.headers['content-encoding'] ?? '').trim().toLowerCase();
+
+  // `finishFlush: Z_SYNC_FLUSH` tolerates a truncated stream. Plenty of servers
+  // close without the trailer, and a body that decoded fine up to that point is
+  // worth keeping -- the metadata lives in the <head> either way.
+  const options = { finishFlush: zlib.constants.Z_SYNC_FLUSH };
+
+  if (encoding === 'gzip' || encoding === 'x-gzip') return response.pipe(zlib.createGunzip(options));
+  if (encoding === 'deflate') return response.pipe(zlib.createInflate(options));
+  if (encoding === 'br') return response.pipe(zlib.createBrotliDecompress());
+
+  return response;
+}
+
 /** Reads a response body, aborting the moment it grows past the cap. */
 function readBody(response, maxBytes) {
   return new Promise((resolve, reject) => {
+    const stream = decompress(response);
     const chunks = [];
     let size = 0;
 
-    response.on('data', (chunk) => {
+    stream.on('data', (chunk) => {
       size += chunk.length;
 
       if (size > maxBytes) {
+        // Both ends: the decompressor would otherwise keep inflating what the
+        // socket has already delivered.
         response.destroy();
+        stream.destroy();
         reject(new FetchError('too-large', 'That page is too large to process'));
         return;
       }
@@ -88,10 +135,21 @@ function readBody(response, maxBytes) {
       chunks.push(chunk);
     });
 
-    response.on('end', () => resolve(Buffer.concat(chunks)));
-    response.on('error', (error) =>
+    stream.on('end', () => resolve(Buffer.concat(chunks)));
+
+    // A corrupt or truncated encoded body is the site's fault, not ours, and is
+    // worth one more attempt -- the same reading as a reset connection.
+    stream.on('error', (error) =>
       reject(new FetchError('network', error.message, { retryable: true })),
     );
+
+    // Only reachable when `decompress` returned a wrapper; otherwise this is
+    // the same emitter as above and the handler is simply redundant.
+    if (stream !== response) {
+      response.on('error', (error) =>
+        reject(new FetchError('network', error.message, { retryable: true })),
+      );
+    }
   });
 }
 
@@ -158,6 +216,7 @@ export function createSafeFetch({ isBlocked = isBlockedAddress, ...overrides } =
   return async function safeFetch(input, options = {}) {
     const timeoutMs = options.timeoutMs ?? config.timeoutMs;
     const maxBytes = options.maxBytes ?? config.maxBytes;
+    const accept = options.accept ?? config.accept;
     const deadline = Date.now() + timeoutMs;
 
     let url = new URL(input);
@@ -186,10 +245,12 @@ export function createSafeFetch({ isBlocked = isBlockedAddress, ...overrides } =
         family: resolved.family,
         headers: {
           'User-Agent': config.userAgent,
-          Accept: 'text/html,application/xhtml+xml',
-          // No compression: the body is capped by size, and an encoded stream
-          // would have to be inflated before the cap could mean anything.
-          'Accept-Encoding': 'identity',
+          Accept: accept,
+          // Safe because the cap in `readBody` counts decompressed bytes as
+          // they arrive. Brotli is offered last: it decodes more slowly, which
+          // matters on a tenth of a CPU, so it is a fallback rather than a
+          // preference.
+          'Accept-Encoding': 'gzip, deflate, br;q=0.5',
           Host: url.host,
         },
         timeoutMs: remaining,
