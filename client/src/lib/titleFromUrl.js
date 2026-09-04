@@ -13,12 +13,21 @@
  * would be worse than showing the address.
  */
 
-/** Path segments that are routing furniture rather than the name of anything. */
+/**
+ * Path segments that are routing furniture rather than the name of anything.
+ *
+ * The social-video shapes -- `reel`, `reels`, `shorts`, `clip` -- are here for
+ * the same reason `watch` is: `instagram.com/reel/C8xYz1AbCdE/` would otherwise
+ * be titled "Reel", which is a category, not a name, and every reel in the
+ * vault would carry it. The address itself at least identifies which one.
+ */
 const GENERIC_SEGMENTS = new Set([
   'watch', 'index', 'home', 'default', 'main',
-  'post', 'posts', 'p', 'status', 'v', 'dp', 'item', 'entry',
-  'article', 'articles', 'blog', 'story', 'video', 'videos',
+  'post', 'posts', 'p', 'status', 'statuses', 'v', 'dp', 'item', 'entry',
+  'article', 'articles', 'blog', 'story', 'stories', 'video', 'videos',
+  'reel', 'reels', 'shorts', 'short', 'clip', 'clips', 'live', 'embed',
   'page', 'view', 'read', 'en', 'en-us', 'amp', 'abs', 'pdf',
+  'gallery', 'photo', 'photos', 'image', 'images', 'track', 'episode',
 ]);
 
 const TRAILING_EXTENSION = /\.(html?|php|aspx?|jsp|md|htm)$/i;
@@ -69,6 +78,43 @@ const titleCase = (words) =>
  */
 export function prettyUrl(url) {
   return url.replace(/^https?:\/\//i, '').replace(/\/$/, '');
+}
+
+/** A domain, with the noise that stops two spellings of it comparing equal. */
+const bareDomain = (value) => value.trim().toLowerCase().replace(/^www\./, '').replace(/\/+$/, '');
+
+/** The site's name without its suffix: `instagram.com` -> `instagram`. */
+const siteName = (domain) => bareDomain(domain).split('.')[0];
+
+/**
+ * Whether a stored title actually names the page, or only names the site.
+ *
+ * Extraction no longer writes the domain into `title`
+ * (`server/src/services/metadataParser.js`), but every bookmark saved before
+ * that change still carries it, and plenty of pages genuinely title themselves
+ * after their site -- a blocked Instagram page comes back titled `Instagram`.
+ * Either way the word is already printed on the metadata line directly beneath
+ * the title, so spending the headline on it says nothing twice.
+ *
+ * The suffix-stripped comparison is the deliberate part, and it does cost
+ * something: a page at `redis.io` legitimately called "Redis" loses its title
+ * and is named from its path instead. That is an acceptable trade -- the path
+ * is more specific than the site name in every case where the two differ.
+ */
+export function isRealTitle(title, domain) {
+  if (!title) return false;
+
+  const named = bareDomain(title);
+  return named !== bareDomain(domain ?? '') && named !== siteName(domain ?? '');
+}
+
+/**
+ * The best name available for a bookmark: its own title, else one read out of
+ * the URL's path, else the address itself.
+ */
+export function displayTitle({ title, url, domain }) {
+  if (isRealTitle(title, domain)) return title;
+  return titleFromUrl(url) ?? prettyUrl(url);
 }
 
 /**

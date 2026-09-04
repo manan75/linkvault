@@ -93,15 +93,26 @@ export function decodeHtml(body, contentType = '') {
 }
 
 /**
- * `domain` is the fallback title, so a page with no usable metadata at all
- * still produces a labelled bookmark.
+ * A page that declares no title at all leaves `title` empty, deliberately.
+ *
+ * The domain used to go here so that every bookmark carried *something*, but
+ * the domain is already its own field and the client already prints it on the
+ * line beneath the title -- so it spent the most valuable line on the card
+ * repeating the least specific thing known about the link. Worse, it is
+ * indistinguishable from a real title once stored: `completeLink` only fills an
+ * empty field, so the domain would occupy `title` permanently and a later
+ * successful retry could never replace it.
+ *
+ * Left empty, the client derives a name from the URL's own path
+ * (`client/src/lib/titleFromUrl.js`), which is a guess it can revise, and the
+ * field stays open for the real title.
  */
-export function parseMetadata(html, { finalUrl, domain }) {
+export function parseMetadata(html, { finalUrl }) {
   const $ = cheerio.load(html);
 
   return {
     title: cleanText(
-      firstOf(meta($, 'og:title'), meta($, 'twitter:title'), $('title').first().text(), domain),
+      firstOf(meta($, 'og:title'), meta($, 'twitter:title'), $('title').first().text()),
       LIMITS.title,
     ),
     description: cleanText(

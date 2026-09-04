@@ -8,8 +8,8 @@ import { decodeHtml, parseMetadata } from '../src/services/metadataParser.js';
 const fixture = (name) =>
   fs.readFileSync(path.join(import.meta.dirname, 'fixtures', name), 'utf8');
 
-const parse = (name, finalUrl = 'https://example.com/blog/post', domain = 'example.com') =>
-  parseMetadata(fixture(name), { finalUrl, domain });
+const parse = (name, finalUrl = 'https://example.com/blog/post') =>
+  parseMetadata(fixture(name), { finalUrl });
 
 describe('parseMetadata', () => {
   it('prefers Open Graph over the document title', () => {
@@ -35,13 +35,16 @@ describe('parseMetadata', () => {
     assert.equal(parse('bare-title.html').favicon, 'https://example.com/favicon.ico');
   });
 
-  it('falls back to the domain when there is no title at all', () => {
+  it('leaves the title empty when the page declares none', () => {
+    // Not the domain: the card already prints that on the line below, and a
+    // domain stored here would permanently block the real title, because
+    // `completeLink` only fills a field that is still empty. The client names
+    // the link from its URL instead.
     const result = parseMetadata('<html><body>hi</body></html>', {
       finalUrl: 'https://example.com/',
-      domain: 'example.com',
     });
 
-    assert.equal(result.title, 'example.com');
+    assert.equal(result.title, '');
   });
 
   it('resolves relative asset paths against the URL the fetch ended at', () => {
@@ -75,7 +78,6 @@ describe('parseMetadata', () => {
     const long = 'word '.repeat(1000);
     const result = parseMetadata(`<meta name="description" content="${long}">`, {
       finalUrl: 'https://example.com/',
-      domain: 'example.com',
     });
 
     assert.ok(result.description.length <= 2000);

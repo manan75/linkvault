@@ -45,7 +45,6 @@ export function createMetadataWorker({
       const fields = isHtml(response.contentType)
         ? parseMetadata(decodeHtml(response.body, response.contentType), {
             finalUrl: response.url,
-            domain: link.domain,
           })
         : null;
 
