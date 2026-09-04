@@ -20,11 +20,12 @@ Read in this order when picking the project back up.
 | [2026-09-01-phase-5-enrichment.md](./2026-09-01-phase-5-enrichment.md) | Phase 5: what shipped, why the planned model did not exist, and what the real-API run showed |
 | [2026-09-02-deployment-and-extension-plan.md](./2026-09-02-deployment-and-extension-plan.md) | Deployment decisions and cost model, the blockers found by auditing the tree, rate limiting, and the Chrome extension plan |
 | [2026-09-02-deploy-v1.md](./2026-09-02-deploy-v1.md) | Deploy v1: what shipped, the cookie decision and what it costs, the spending bounds, graceful shutdown, and the provisioning handover |
-| [2026-09-03-deploy-v1-live.md](./2026-09-03-deploy-v1-live.md) | Deploy v1 is live: what the dashboards actually needed, the sites that block a datacenter IP, the URL-derived title fallback, and the fix list and extension path for next time. **Start here for the next session.** |
+| [2026-09-03-deploy-v1-live.md](./2026-09-03-deploy-v1-live.md) | Deploy v1 is live: what the dashboards actually needed, the sites that block a datacenter IP, the URL-derived title fallback, and the fix list and extension path for next time |
+| [2026-09-04-extension.md](./2026-09-04-extension.md) | The title and tagging fixes, bearer tokens, page capture ahead of Phase 6 and its Important Rule argument, and the Chrome Web Store deployment checklist. **Start here for the next session.** |
 
 ---
 
-## State of play (as of 2026-09-03)
+## State of play (as of 2026-09-04)
 
 **Phases 1 to 5 are complete, and v1 is deployed and reachable.**
 
@@ -32,7 +33,8 @@ Working: project setup, Express API, MongoDB, authentication, bookmark CRUD, col
 favorites, read/unread, keyword search with filters, the dashboard, URL metadata extraction with
 processing status and retries, the appearance pass (dark mode, accent picker, redesigned link
 list), an event-driven pipeline on Kafka with extraction in its own worker process, and generated
-summaries and tags with tag rename/merge. `server` has 220 passing tests. `client` builds clean.
+summaries and tags with tag rename/merge, bearer-token auth, and a Chrome extension that saves the
+current tab with a capture of the page. `server` has 248 passing tests. `client` builds clean.
 
 Phase 4 was verified against a real broker: two processes, a full broker outage and recovery, a
 worker killed mid-fetch, and the no-broker path. **Three bugs came out of that, none of which the
@@ -102,6 +104,21 @@ of the theme above, and one nothing runnable on the development machine could ha
 response so far is `titleFromUrl`, which names an unfetchable link from its path (`/problems/two-sum/`
 → "Two Sum") rather than showing the bare domain the line beneath already repeats. The real answers —
 an oEmbed pre-step, and extension page capture — are both listed in the live note, section 5.
+
+**The Chrome extension exists, and page capture shipped ahead of Phase 6.** That is a deliberate
+deviation from the deployment plan's ordering and it carries the `CLAUDE.md` Important Rule argument
+in the 2026-09-04 note, section 2 — the short version being that capture is the only thing that
+reaches a page a datacenter IP is refused, and its stored text is the Phase 6 embedding input
+anyway. Alongside it: bearer tokens (`Authorization: Bearer lv_…`, SHA-256 hashed, unable to mint
+their own replacement), `/settings` in the web app to mint one, and an unpacked-loadable
+`extension/` with no build step. **248 server tests pass.** Nothing is on the Chrome Web Store yet;
+the checklist for that is section 4 of the same note, and every step of it is the user's to do.
+
+Two fixes landed with it. Extraction no longer writes the domain into `title` — it did, which both
+wasted the card's headline on the line beneath it and permanently blocked the real title, since
+`completeLink` only fills an empty field. And auto-tags are capped at three rather than five, with a
+deterministic guard that drops a tag which only narrows one already kept: `instagram` +
+`instagram-reel` + `kpop` + `kpop-idol` was real output.
 
 Then: **Phase 6 — embeddings, MongoDB Vector Search, semantic search.** It subscribes to
 `link.enriched`, which the enrichment worker now publishes and nothing consumes yet, so it adds a
