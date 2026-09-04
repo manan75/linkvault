@@ -1,8 +1,19 @@
 import { Router } from 'express';
 
-import { login, loginSchema, logout, me, register, registerSchema } from '../controllers/authController.js';
-import { byIp, createRateLimit, MINUTE_MS } from '../middleware/rateLimit.js';
-import { requireAuth } from '../middleware/requireAuth.js';
+import {
+  createToken,
+  createTokenSchema,
+  deleteToken,
+  getTokens,
+  login,
+  loginSchema,
+  logout,
+  me,
+  register,
+  registerSchema,
+} from '../controllers/authController.js';
+import { byIp, byUser, createRateLimit, MINUTE_MS } from '../middleware/rateLimit.js';
+import { requireAuth, requireSession } from '../middleware/requireAuth.js';
 import { validate } from '../middleware/validate.js';
 
 export const authRouter = Router();
@@ -38,7 +49,40 @@ const registerLimiter = createRateLimit({
   message: 'Too many accounts created from this address. Try again later.',
 });
 
+/**
+ * Per account, not per address, because the person creating tokens is signed in
+ * and the resource being protected is rows in their name.
+ *
+ * Set deliberately above `MAX_TOKENS_PER_USER`, so the cap is what a real user
+ * meets and this only catches a loop. Below it, someone revoking and reissuing
+ * a token would be told to wait when what they actually needed to hear is that
+ * they already have too many.
+ */
+const tokenLimiter = createRateLimit({
+  name: 'create-token',
+  limit: 20,
+  windowMs: 60 * MINUTE_MS,
+  keyBy: byUser,
+  message: 'Too many access tokens created. Try again in a little while.',
+});
+
 authRouter.post('/register', registerLimiter, validate(registerSchema), register);
 authRouter.post('/login', loginLimiter, validate(loginSchema), login);
 authRouter.post('/logout', logout);
 authRouter.get('/me', requireAuth, me);
+
+/**
+ * Token management is `requireSession`, not `requireAuth`: a token must never
+ * be able to mint its own replacement. Everything else in the API accepts
+ * either credential.
+ */
+authRouter.post(
+  '/tokens',
+  requireAuth,
+  requireSession,
+  tokenLimiter,
+  validate(createTokenSchema),
+  createToken,
+);
+authRouter.get('/tokens', requireAuth, requireSession, getTokens);
+authRouter.delete('/tokens/:id', requireAuth, requireSession, deleteToken);
