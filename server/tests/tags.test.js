@@ -54,7 +54,37 @@ describe('normalizeTags', () => {
 
   it('caps the list and drops unusable entries without losing its place', () => {
     const tags = normalizeTags(['a', '', 'b', '...', 'c', 'd', 'e', 'f']);
-    assert.deepEqual(tags, ['a', 'b', 'c', 'd', 'e']);
+    assert.deepEqual(tags, ['a', 'b', 'c']);
+  });
+
+  it('drops a tag that only narrows one already kept', () => {
+    // The real output that motivated the rule: four tags naming two things.
+    assert.deepEqual(
+      normalizeTags(['instagram', 'instagram reel', 'kpop', 'kpop idol']),
+      ['instagram', 'kpop'],
+    );
+  });
+
+  it('keeps the narrow tag when the broad one was never offered', () => {
+    assert.deepEqual(normalizeTags(['kpop-idol', 'dance']), ['kpop-idol', 'dance']);
+  });
+
+  it('compares whole words, so a shared prefix is not a narrowing', () => {
+    // `react` must not swallow `preact`, and `ml` must not swallow `html`.
+    assert.deepEqual(normalizeTags(['react', 'preact']), ['react', 'preact']);
+    assert.deepEqual(normalizeTags(['ml', 'html']), ['ml', 'html']);
+    // Nor does a suffix match: `learning` does not narrow to `machine-learning`.
+    assert.deepEqual(
+      normalizeTags(['learning', 'machine-learning']),
+      ['learning', 'machine-learning'],
+    );
+  });
+
+  it('drops a narrowing that the vocabulary case-snap made equal', () => {
+    assert.deepEqual(
+      normalizeTags(['Instagram', 'Instagram-Reel'], { vocabulary: ['Instagram'] }),
+      ['Instagram'],
+    );
   });
 
   it('tolerates a model returning nothing at all', () => {

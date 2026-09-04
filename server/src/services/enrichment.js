@@ -50,7 +50,7 @@ export { EnrichmentError };
 /**
  * Structured output. Both fields are required and unconstrained on purpose:
  * strict JSON schema mode rejects optionals and ignores array length bounds, so
- * "at most five tags" is enforced after the call, where it actually holds.
+ * the tag cap is enforced after the call, in `utils/tags.js`, where it holds.
  */
 const EnrichmentSchema = z.object({
   summary: z.string(),
@@ -73,7 +73,18 @@ const SYSTEM_PROMPT = [
   '- Always tag, even when the summary has to be empty. A title alone is usually',
   '  enough to name the subject, and naming a subject is not the same as claiming',
   '  to know what the page says about it.',
-  `- At most ${MAX_AUTO_TAGS}, and fewer when fewer are warranted. Lowercase and hyphenated.`,
+  `- At most ${MAX_AUTO_TAGS}, and fewer when fewer are warranted. One is a fine answer;`,
+  `  ${MAX_AUTO_TAGS} is a ceiling, not a target. Do not pad the list to reach it.`,
+  '- Lowercase and hyphenated.',
+  '- A tag exists to gather many bookmarks under one word. Prefer the broadest tag',
+  '  that is still accurate: a tag that fits only this one page is a label nobody',
+  '  will ever click.',
+  '- Never give both a tag and a narrowing of the same tag. "instagram" and',
+  '  "instagram-reel" are one tag, not two, and so are "kpop" and "kpop-idol".',
+  '  Pick the broader one.',
+  '- Do not tag the site or platform the page is hosted on. The domain is already',
+  '  stored and already filterable, so "youtube", "instagram" and "github" add',
+  '  nothing. Tag what the page is about instead.',
   '- Topics and technologies, not opinions and not the content type.',
   '- Reuse a tag from the existing vocabulary whenever it genuinely fits, including',
   '  when the wording differs: "postgres" and "postgresql" are the same tag, and',
@@ -105,9 +116,10 @@ const bareDomain = (value) => value.toLowerCase().replace(/^www\./, '').replace(
 /**
  * Whether there is anything worth paying for.
  *
- * A link with no description whose title is just its own domain -- which is
- * what extraction leaves behind for a page carrying no metadata -- gives the
- * model nothing but a hostname. Asking anyway costs money and creates the
+ * A link with no description and no title gives the model nothing at all, and a
+ * link whose title is just its own domain gives it nothing but a hostname --
+ * the shape every bookmark saved before extraction stopped writing the domain
+ * into `title` still carries. Asking anyway costs money and creates the
  * strongest possible temptation to invent. Skipping is the honest answer.
  */
 export function hasEnoughToEnrich({ title, description, domain }) {
