@@ -80,6 +80,12 @@ export const authApi = {
   login: (data) => request('/auth/login', { method: 'POST', body: data }),
   logout: () => request('/auth/logout', { method: 'POST' }),
   me: () => request('/auth/me'),
+
+  // Access tokens, for the browser extension and anything else that cannot hold
+  // a cookie. `create` is the only call that ever returns the token itself.
+  tokens: () => request('/auth/tokens'),
+  createToken: (name) => request('/auth/tokens', { method: 'POST', body: { name } }),
+  revokeToken: (id) => request(`/auth/tokens/${id}`, { method: 'DELETE' }),
 };
 
 export const linksApi = {

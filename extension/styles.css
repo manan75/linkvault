@@ -1,0 +1,155 @@
+/*
+ * Deliberately plain CSS and no build step.
+ *
+ * The extension is loaded unpacked during development and uploaded as a zip of
+ * exactly these files, so anything that needed compiling would put a build
+ * artefact between what is written here and what Chrome runs -- and a store
+ * reviewer reads the uploaded source. Tailwind lives in `client/`, where a
+ * bundler already exists.
+ */
+
+:root {
+  color-scheme: light dark;
+
+  --bg: #ffffff;
+  --surface: #f6f6f5;
+  --ink: #1c1b1a;
+  --ink-muted: #6b6a67;
+  --line: #e2e1de;
+  --accent: #2f6f4f;
+  --accent-ink: #ffffff;
+  --ok: #2f6f4f;
+  --warn: #8a6100;
+  --danger: #a12c22;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #191817;
+    --surface: #232120;
+    --ink: #f0efec;
+    --ink-muted: #a3a09b;
+    --line: #34312f;
+    --accent: #6fae8b;
+    --accent-ink: #14231b;
+    --ok: #6fae8b;
+    --warn: #d9a441;
+    --danger: #e0796c;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.popup {
+  width: 320px;
+  padding: 14px;
+}
+
+.options {
+  max-width: 520px;
+  margin: 0 auto;
+  padding: 32px 20px;
+}
+
+h1 {
+  margin: 0 0 20px;
+  font-size: 20px;
+}
+
+.page-title {
+  margin: 0 0 2px;
+  font-weight: 600;
+  /* Two lines: enough to recognise a page, not enough to push the button down. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.page-url {
+  margin: 0 0 14px;
+  color: var(--ink-muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+label {
+  display: block;
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+
+input {
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+}
+
+input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.hint {
+  margin: 6px 0 18px;
+  color: var(--ink-muted);
+  font-size: 12px;
+}
+
+.primary {
+  width: 100%;
+  padding: 10px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.primary:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.status {
+  margin: 12px 0 0;
+  min-height: 1.5em;
+  font-size: 12px;
+  color: var(--ink-muted);
+}
+
+.status.ok {
+  color: var(--ok);
+}
+
+.status.warn {
+  color: var(--warn);
+}
+
+.status.error {
+  color: var(--danger);
+}
+
+footer {
+  padding: 0 14px 12px;
+  font-size: 12px;
+}
+
+footer a {
+  color: var(--ink-muted);
+}

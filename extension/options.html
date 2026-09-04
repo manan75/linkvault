@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>LinkVault settings</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body class="options">
+    <main>
+      <h1>LinkVault</h1>
+
+      <form id="settings">
+        <label for="api-base">API address</label>
+        <input id="api-base" type="url" spellcheck="false" autocomplete="off" />
+        <p class="hint">
+          Must be one of the addresses the extension was built to reach. Change it only to point at
+          a local server.
+        </p>
+
+        <label for="token">Access token</label>
+        <input id="token" type="password" spellcheck="false" autocomplete="off" placeholder="lv_…" />
+        <p class="hint">
+          Create one in LinkVault under <strong>Settings → Access tokens</strong>. It is shown once,
+          so paste it here straight away.
+        </p>
+
+        <button type="submit" class="primary">Save and connect</button>
+      </form>
+
+      <p class="status" id="status" role="status"></p>
+    </main>
+
+    <script type="module" src="src/options.js"></script>
+  </body>
+</html>
