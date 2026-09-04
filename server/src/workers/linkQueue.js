@@ -109,7 +109,9 @@ export async function claimForProcessing(linkId) {
       $inc: { processingAttempts: 1 },
     },
     { new: true },
-  );
+    // `+capture` because the field is `select: false` -- it is only ever read
+    // here, and every other query in the system is better off not carrying it.
+  ).select('+capture');
 }
 
 /** Writes a successful extraction back, and records that nothing was found. */

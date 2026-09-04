@@ -39,10 +39,35 @@ const booleanFlag = z
 
 const objectIdSchema = z.string().regex(/^[0-9a-fA-F]{24}$/, 'Not a valid id');
 
+/**
+ * What the browser extension may send about the page it is looking at.
+ *
+ * Every field is optional and every field is a maximum, not an expectation: the
+ * extension reads whatever the page happens to expose. Nothing here is trusted
+ * -- `parseCapture` sanitises all of it before it reaches the database -- so
+ * these bounds exist to stop an oversized body, not to validate content.
+ *
+ * `.passthrough()` is deliberately absent. An unknown key is dropped rather
+ * than stored, so a newer extension sending a field this server does not know
+ * about degrades instead of writing something nothing will ever read.
+ */
+const captureSchema = z.object({
+  title: z.string().max(1000).optional(),
+  description: z.string().max(5000).optional(),
+  author: z.string().max(500).optional(),
+  favicon: z.string().max(2048).optional(),
+  thumbnail: z.string().max(2048).optional(),
+  // Generously bounded here and truncated to `MAX_CAPTURE_TEXT` on the way in;
+  // the extension already trims, and this is the backstop if it does not.
+  text: z.string().max(100_000).optional(),
+});
+
 export const createLinkSchema = z.object({
   url: z.string().trim().min(1, 'A URL is required').max(2048, 'That URL is too long'),
   // Optional: saving without choosing a collection stays one paste and one click.
   collectionId: objectIdSchema.nullish(),
+  // Only the extension sends this. The web app posts a URL and nothing else.
+  capture: captureSchema.optional(),
 });
 
 export const updateLinkSchema = z
@@ -78,20 +103,27 @@ export const listLinksSchema = z.object({
 });
 
 export const saveLink = asyncHandler(async (req, res) => {
-  const { link, created, moved } = await createLink({
+  const { link, created, moved, recaptured } = await createLink({
     userId: req.userId,
     url: req.body.url,
     collectionId: req.body.collectionId,
+    capture: req.body.capture,
   });
 
   // Principle 2: the response does not wait for extraction. The nudge only
   // wakes the reaper early so the link is published while the user is still
   // looking at the row, instead of up to one sweep later.
-  if (created) reaper.nudge();
+  //
+  // `recaptured` nudges for the same reason: the link already existed but has
+  // just been handed page content the server could not reach on its own, and it
+  // is back at `pending` waiting to be reprocessed.
+  if (created || recaptured) reaper.nudge();
 
   // 200 rather than 201 when the bookmark already existed, so the client can
   // tell the user "already saved" instead of implying a second copy was made.
-  res.status(created ? 201 : 200).json({ link: link.toPublicJSON(), created, moved });
+  res
+    .status(created ? 201 : 200)
+    .json({ link: link.toPublicJSON(), created, moved, recaptured });
 });
 
 export const getLinks = asyncHandler(async (req, res) => {

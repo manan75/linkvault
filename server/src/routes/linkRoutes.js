@@ -46,6 +46,8 @@ linkRouter.get('/tags', getTags);
 // Renaming onto an existing tag is the merge; there is no separate endpoint.
 linkRouter.patch('/tags/:name', validate(renameTagSchema), renameTagEverywhere);
 
+// The larger body limit this route needs for a page capture is applied in
+// `app.js`, because the body is parsed before any router sees the request.
 linkRouter.post('/', saveLimiter, validate(createLinkSchema), saveLink);
 linkRouter.get('/', validate(listLinksSchema, 'query'), getLinks);
 linkRouter.get('/:id', getLink);

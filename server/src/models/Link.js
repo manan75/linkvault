@@ -62,6 +62,39 @@ const linkSchema = new mongoose.Schema(
     // Vector payloads are large and never needed by a list view.
     embedding: { type: [Number], default: undefined, select: false },
 
+    /**
+     * What the browser extension saw, for pages the server cannot reach.
+     *
+     * `safeFetch` calls from a datacenter, and production showed what that
+     * costs: YouTube answers 429 and LeetCode 403 to this server specifically,
+     * whatever it sends. The extension holds the rendered DOM of the page the
+     * user is already looking at, from their own address and their own session,
+     * so paywalls, login walls and JavaScript-rendered apps stop applying.
+     *
+     * It is still fetched webpage content and is sanitised exactly as
+     * `parseMetadata`'s output is. Arriving with a valid credential attached
+     * makes it feel trusted; it is not (`CLAUDE.md` §7).
+     *
+     * `select: false` because it is only ever read by the metadata worker and
+     * would otherwise ride along on every dashboard listing. `text` is kept
+     * after use rather than discarded: it is the input Phase 6 embeds, and
+     * keeping it means re-embedding the corpus later does not mean asking every
+     * user to revisit every page.
+     */
+    capture: {
+      type: {
+        title: { type: String, trim: true, maxlength: 300, default: '' },
+        description: { type: String, trim: true, maxlength: 2000, default: '' },
+        author: { type: String, trim: true, maxlength: 200, default: '' },
+        favicon: { type: String, trim: true, default: '' },
+        thumbnail: { type: String, trim: true, default: '' },
+        text: { type: String, default: '' },
+        capturedAt: { type: Date, default: null },
+      },
+      default: undefined,
+      select: false,
+    },
+
     // The effective tag set: what the user filters and searches by, whatever
     // its provenance. Type unchanged from Phase 2, so every index, the text
     // index and the `$all` filters keep working with no migration.

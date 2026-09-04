@@ -4,6 +4,7 @@ import { Link } from '../models/Link.js';
 import { canonicalizeUrl } from '../utils/canonicalUrl.js';
 import { ApiError } from '../utils/ApiError.js';
 import { isObjectId } from '../utils/objectId.js';
+import { parseCapture } from './captureParser.js';
 import { buildLinkQuery } from './linkQuery.js';
 import { getOwnedCollection } from './collectionService.js';
 import { assertLinkQuota } from './usage.js';
@@ -24,10 +25,14 @@ const EDITABLE_FIELDS = ['title', 'description', 'tags', 'collectionId', 'isFavo
  * instruction would let a routine re-save quietly unfile an existing bookmark.
  * Only an explicit collection moves anything.
  */
-export async function createLink({ userId, url, collectionId }) {
+export async function createLink({ userId, url, collectionId, capture }) {
   const { url: originalUrl, canonicalUrl, domain } = canonicalizeUrl(url);
 
   if (collectionId) await getOwnedCollection({ userId, id: collectionId });
+
+  // Sanitised before anything else touches it, and before the ownership branch
+  // below, so there is exactly one place page-supplied content enters. §7.
+  const parsedCapture = parseCapture(capture, { pageUrl: originalUrl });
 
   const existing = await Link.findOne({ userId, canonicalUrl });
 
@@ -36,12 +41,26 @@ export async function createLink({ userId, url, collectionId }) {
     // that beats reporting "already saved" and silently dropping the choice.
     const moved = Boolean(collectionId) && String(existing.collectionId) !== String(collectionId);
 
-    if (moved) {
-      existing.collectionId = collectionId;
-      await existing.save();
+    if (moved) existing.collectionId = collectionId;
+
+    // The extension re-saving a page whose extraction failed is not a duplicate
+    // -- it is the one client that can reach the page rescuing a link the
+    // server never could. An offline retry queue makes re-saves routine, so
+    // this is scoped tightly: only a `failed` link, and only when a capture
+    // actually arrived. A `ready` link is left exactly as it is.
+    const recaptured = Boolean(parsedCapture) && existing.processingStatus === 'failed';
+
+    if (recaptured) {
+      existing.capture = parsedCapture;
+      existing.processingStatus = 'pending';
+      existing.processingAttempts = 0;
+      existing.processingError = '';
+      existing.queuedAt = null;
     }
 
-    return { link: existing, created: false, moved };
+    if (moved || recaptured) await existing.save();
+
+    return { link: existing, created: false, moved, recaptured };
   }
 
   // Checked here rather than at the top of the function, so that re-saving a
@@ -58,14 +77,15 @@ export async function createLink({ userId, url, collectionId }) {
       canonicalUrl,
       domain,
       collectionId: collectionId ?? null,
+      capture: parsedCapture ?? undefined,
     });
-    return { link, created: true, moved: false };
+    return { link, created: true, moved: false, recaptured: false };
   } catch (error) {
     // Two concurrent saves of the same URL: the index caught the loser, so
     // return what the winner created.
     if (error?.code === 11000) {
       const link = await Link.findOne({ userId, canonicalUrl });
-      if (link) return { link, created: false, moved: false };
+      if (link) return { link, created: false, moved: false, recaptured: false };
     }
     throw error;
   }

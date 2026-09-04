@@ -1,4 +1,5 @@
 import { TOPICS } from '../events/topics.js';
+import { fieldsFromCapture } from '../services/captureParser.js';
 import { decodeHtml, parseMetadata } from '../services/metadataParser.js';
 import { safeFetch } from '../services/safeFetch.js';
 import { createDrain } from './drain.js';
@@ -12,6 +13,14 @@ import { claimForProcessing, completeLink, failLink } from './linkQueue.js';
  * complete-or-fail sequence the Phase 3 poller ran; only what calls it moved.
  * Everything below the claim -- the guarded fetch, the parser, the retry policy
  * -- is untouched.
+ *
+ * One branch was added for the extension: a link that arrived carrying a
+ * capture already has its fields and skips the fetch entirely. The branch is
+ * here rather than in `saveLink`, even though there is no I/O to wait for and
+ * completing synchronously would be tempting. Doing it there would duplicate
+ * `completeLink`, fork the state machine, and break `CLAUDE.md` principle 2.
+ * Here there is still one completion path, one lease and one retry policy --
+ * the capture case simply does not call the network.
  */
 
 const isHtml = (contentType) => /^\s*(text\/html|application\/xhtml\+xml)/i.test(contentType);
@@ -22,6 +31,23 @@ export function createMetadataWorker({
   logger = console,
 } = {}) {
   const drain = createDrain();
+
+  /**
+   * Fetches the page and reads what it declares about itself.
+   *
+   * Returns null rather than throwing for a PDF or an image: there is simply
+   * nothing to parse, and saying so beats leaving the link retrying a page it
+   * can never read.
+   */
+  async function fetchAndParse(link) {
+    const response = await fetchPage(link.url);
+
+    if (!isHtml(response.contentType)) return null;
+
+    return parseMetadata(decodeHtml(response.body, response.contentType), {
+      finalUrl: response.url,
+    });
+  }
 
   /**
    * Handles one `link.created` event.
@@ -38,15 +64,14 @@ export function createMetadataWorker({
     if (!link) return false;
 
     try {
-      const response = await fetchPage(link.url);
-
-      // A PDF or an image is not a failure -- there is simply nothing to parse,
-      // and saying so beats leaving the link retrying a page it can never read.
-      const fields = isHtml(response.contentType)
-        ? parseMetadata(decodeHtml(response.body, response.contentType), {
-            finalUrl: response.url,
-          })
-        : null;
+      // The extension already saw this page, from the user's own address and
+      // their own session. That is not an optimisation: production returns 429
+      // for YouTube and 403 for LeetCode to this server whatever it sends, and
+      // no server-side technique reaches a page behind a login at all. When a
+      // capture is present it is the better source, not the fallback.
+      const fields = link.capture
+        ? fieldsFromCapture(link.capture)
+        : await fetchAndParse(link);
 
       await completeLink(link, fields);
 
