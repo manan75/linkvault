@@ -1,5 +1,7 @@
 import mongoose from 'mongoose';
 
+import { buildSearchTokens } from '../services/searchTokens.js';
+
 /**
  * `queued` sits between `pending` and `processing` and exists for one reason:
  * without it the reaper republishes every waiting link on every sweep. It also
@@ -58,9 +60,22 @@ const linkSchema = new mongoose.Schema(
     // with -- an invented summary is worse than none, because it is shown as
     // fact and Phase 6 will embed it.
     summary: { type: String, trim: true, maxlength: 2000, default: '' },
-    // Filled in by Phase 6. Nothing writes this yet.
     // Vector payloads are large and never needed by a list view.
     embedding: { type: [Number], default: undefined, select: false },
+
+    /**
+     * Every word this bookmark can be found by, materialised so the keyword
+     * search can match a prefix and require every term.
+     *
+     * Derived, never authored: the `pre('save')` hook below rebuilds it from
+     * the fields in `searchableFields()` whenever one of them changes, so it
+     * cannot drift from the document it describes. See `services/searchTokens.js`
+     * for what MongoDB's `$text` index could not do and why this exists.
+     *
+     * `select: false` for the same reason `embedding` is: it is a query-time
+     * index, not something any response body needs.
+     */
+    searchTokens: { type: [String], default: [], select: false },
 
     /**
      * What the browser extension saw, for pages the server cannot reach.
@@ -176,15 +191,51 @@ linkSchema.index({ processingStatus: 1, savedAt: 1 });
 // extraction has already finished with.
 linkSchema.index({ enrichmentStatus: 1, processingStatus: 1, savedAt: 1 });
 
-// Keyword search. Weighted so a match in the title outranks one in the body of a
-// description. This is the keyword half of the Phase 8 hybrid search.
-linkSchema.index(
-  { title: 'text', tags: 'text', description: 'text', summary: 'text', url: 'text' },
-  {
-    name: 'link_keyword_search',
-    weights: { title: 10, tags: 8, summary: 4, description: 2, url: 1 },
-  },
-);
+/**
+ * Keyword search, and the keyword half of the hybrid search.
+ *
+ * Two things about this index are deliberate and were both wrong before.
+ *
+ * **It is prefixed by `userId`.** The `$text` index this replaced was not, so
+ * Mongo could not scope the scan to the owner: it read every matching link
+ * belonging to *every* user and threw the rest away afterwards. Explained on a
+ * corpus of 20 of my links among 2,000 of someone else's, one search returned
+ * 20 documents and examined 4,040 -- and `listLinks` runs `countDocuments` on
+ * the same filter, so it paid that twice per request. This index cannot be
+ * used without an equality match on `userId`, which every query here has.
+ *
+ * **It is a multikey index on an ordinary array, not a text index.** That is
+ * what makes `^reac` an index seek rather than a collection scan, and what lets
+ * a query AND several terms together -- one clause each, all of them using this
+ * index. A text index can do neither.
+ *
+ * Named differently from the `link_keyword_search` text index it replaces, and
+ * that is not cosmetic. Reusing the name would make every existing deployment
+ * fail to start: an index name is unique per collection, `autoIndex` creates
+ * missing indexes but never drops a conflicting one, and Mongo answers a
+ * same-name-different-keys request with `IndexOptionsConflict`. Under a new
+ * name this index simply builds on deploy, and `scripts/reindexSearch.js`
+ * removes the old one.
+ */
+linkSchema.index({ userId: 1, searchTokens: 1 }, { name: 'link_keyword_prefix' });
+
+/**
+ * Keeps the derived token set honest.
+ *
+ * Every hand edit and every pipeline write goes through `save()` -- the two
+ * queues, `updateLink`, and enrichment all do -- so this one hook covers them.
+ * The exception is `renameTag`, which rewrites arrays with an aggregation
+ * pipeline for a good reason and re-indexes explicitly afterwards.
+ */
+linkSchema.pre('save', function rebuildSearchTokens(next) {
+  const touched = ['title', 'description', 'summary', 'tags', 'author', 'domain', 'url'];
+
+  if (this.isNew || touched.some((path) => this.isModified(path))) {
+    this.searchTokens = buildSearchTokens(this);
+  }
+
+  next();
+});
 
 linkSchema.methods.toPublicJSON = function toPublicJSON() {
   return {

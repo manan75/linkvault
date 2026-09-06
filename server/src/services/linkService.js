@@ -6,6 +6,8 @@ import { ApiError } from '../utils/ApiError.js';
 import { isObjectId } from '../utils/objectId.js';
 import { parseCapture } from './captureParser.js';
 import { buildLinkQuery } from './linkQuery.js';
+import { searchLinks } from './search.js';
+import { reindexKeywords } from './searchIndex.js';
 import { getOwnedCollection } from './collectionService.js';
 import { assertLinkQuota } from './usage.js';
 import { normalizeTag } from '../utils/tags.js';
@@ -91,11 +93,22 @@ export async function createLink({ userId, url, collectionId, capture }) {
   }
 }
 
+/**
+ * One page of the user's library, browsed or searched.
+ *
+ * The two are one endpoint on purpose -- the dashboard shows a list either way,
+ * and every filter applies to both -- but they are genuinely different queries.
+ * Browsing pages in the database, which is what an ordinary listing should do.
+ * Searching ranks a bounded candidate set in `services/search.js`, because
+ * relevance is computed rather than stored.
+ */
 export async function listLinks({ userId, params }) {
-  const { filter, sort, projection, skip, limit } = buildLinkQuery(userId, params);
+  if (params.q) return searchLinks({ userId, params });
+
+  const { filter, sort, skip, limit } = buildLinkQuery(userId, params);
 
   const [links, total] = await Promise.all([
-    Link.find(filter, projection).sort(sort).skip(skip).limit(limit),
+    Link.find(filter).sort(sort).skip(skip).limit(limit),
     Link.countDocuments(filter),
   ]);
 
@@ -240,6 +253,13 @@ export async function renameTag({ userId, from, to }) {
   const result = await Link.updateMany({ userId, tags: source }, [
     { $set: { tags: rewrite('tags'), autoTags: rewrite('autoTags') } },
   ]);
+
+  // The pipeline update above never loads a document, so the `pre('save')` hook
+  // that keeps `searchTokens` in step with `tags` cannot run. Without this, a
+  // renamed tag stays findable under its old name and is invisible under its
+  // new one -- a search index quietly describing a document that no longer
+  // exists. This is the one write path in the project that needs it.
+  await reindexKeywords({ userId, tags: target });
 
   return { matched: matching, modified: result.modifiedCount, merged };
 }
