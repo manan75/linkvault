@@ -30,6 +30,23 @@ const envSchema = z.object({
   OPENAI_MODEL: z.string().default('gpt-5-mini'),
   ENABLE_ENRICHMENT: z.enum(['true', 'false']).optional(),
 
+  // Embeddings (Phase 6). Same key, same optionality, same consequence: with no
+  // key the embedding worker disables itself and search falls back to keywords,
+  // which still work. See services/embedding.js for why this is a hosted API
+  // rather than the Sentence Transformers service CLAUDE.md names.
+  EMBEDDING_MODEL: z.string().default('text-embedding-3-small'),
+  // Shortened from the model's native 1536. `text-embedding-3-*` is trained so
+  // a prefix of the vector is itself usable, so this trades a little accuracy
+  // for three quarters of the storage -- and storage, not accuracy, is what is
+  // scarce on a free Atlas tier. Every stored vector must share this number;
+  // changing it invalidates the corpus, which `embeddingFingerprint` detects.
+  EMBEDDING_DIMENSIONS: z.coerce.number().int().positive().max(3072).default(512),
+  ENABLE_EMBEDDINGS: z.enum(['true', 'false']).optional(),
+  // A separate ceiling from enrichment's, because they are separate bills and
+  // a spent summarisation budget should not stop the vault being searchable.
+  // Higher, because an embedding is roughly two orders of magnitude cheaper.
+  EMBEDDING_DAILY_LIMIT: z.coerce.number().int().nonnegative().default(2_000),
+
   // Redis. Off means the in-memory rate limit store, which is sufficient while
   // there is exactly one API process -- see rateLimit/index.js for why the
   // seam exists before the implementation does.
@@ -69,6 +86,9 @@ export const env = {
   // it either way -- there is nothing to call.
   ENABLE_ENRICHMENT:
     (parsed.data.ENABLE_ENRICHMENT ?? String(parsed.data.NODE_ENV !== 'test')) === 'true' &&
+    Boolean(parsed.data.OPENAI_API_KEY),
+  ENABLE_EMBEDDINGS:
+    (parsed.data.ENABLE_EMBEDDINGS ?? String(parsed.data.NODE_ENV !== 'test')) === 'true' &&
     Boolean(parsed.data.OPENAI_API_KEY),
   ENABLE_REDIS: parsed.data.ENABLE_REDIS === 'true',
 };

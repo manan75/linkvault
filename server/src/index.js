@@ -4,7 +4,7 @@ import { createApp } from './app.js';
 import { eventBus } from './events/index.js';
 import { rateLimitStore } from './rateLimit/index.js';
 import { createShutdown, listenForShutdown } from './utils/shutdown.js';
-import { enrichmentWorker, metadataWorker, reaper } from './workers/runtime.js';
+import { embeddingWorker, enrichmentWorker, metadataWorker, reaper } from './workers/runtime.js';
 
 /** Held so shutdown can close it. Set once the server is listening. */
 let httpServer = null;
@@ -57,6 +57,13 @@ async function start() {
       await enrichmentWorker.start();
       console.log('Enrichment worker running in-process');
     }
+
+    logEmbeddingState();
+
+    if (env.ENABLE_EMBEDDINGS && !env.ENABLE_KAFKA) {
+      await embeddingWorker.start();
+      console.log('Embedding worker running in-process');
+    }
   }
 }
 
@@ -78,6 +85,29 @@ function logEnrichmentState() {
     env.OPENAI_API_KEY
       ? 'Enrichment disabled (ENABLE_ENRICHMENT=false) — links will have no summary or auto-tags'
       : 'Enrichment disabled: no OPENAI_API_KEY set — links will have no summary or auto-tags',
+  );
+}
+
+/**
+ * Says out loud whether search can answer by meaning.
+ *
+ * The same reasoning as `logEnrichmentState`, and the silent failure it
+ * prevents is worse here rather than better: with embeddings off, search still
+ * works, still returns results and never errors -- it is simply keyword-only,
+ * and the one query the product exists to answer quietly stops working.
+ */
+function logEmbeddingState() {
+  if (env.ENABLE_EMBEDDINGS) {
+    console.log(
+      `Embeddings enabled using ${env.EMBEDDING_MODEL} at ${env.EMBEDDING_DIMENSIONS} dimensions`,
+    );
+    return;
+  }
+
+  console.log(
+    env.OPENAI_API_KEY
+      ? 'Embeddings disabled (ENABLE_EMBEDDINGS=false) — search will be keyword only'
+      : 'Embeddings disabled: no OPENAI_API_KEY set — search will be keyword only',
   );
 }
 
@@ -125,7 +155,12 @@ const shutdown = createShutdown({
     () => closeHttpServer(),
     // Settled rather than all: one worker refusing to drain must not deny the
     // other its chance to finish.
-    () => Promise.allSettled([metadataWorker.stop(), enrichmentWorker.stop()]),
+    () =>
+      Promise.allSettled([
+        metadataWorker.stop(),
+        enrichmentWorker.stop(),
+        embeddingWorker.stop(),
+      ]),
     () => eventBus.stop(),
     () => disconnectDatabase(),
   ],

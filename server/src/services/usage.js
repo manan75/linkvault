@@ -33,14 +33,14 @@ export function dayKey(now = new Date()) {
  * upsert collides with the primary key and Mongo raises 11000 -- which is not
  * an error here, it is the answer. That is the budget being exhausted.
  */
-export async function reserveEnrichment({ limit = env.ENRICHMENT_DAILY_LIMIT, now = new Date() } = {}) {
+async function reserve(kind, { limit, now = new Date() }) {
   const day = dayKey(now);
 
   if (limit <= 0) return { allowed: false, count: 0, limit, day };
 
   try {
     const usage = await DailyUsage.findOneAndUpdate(
-      { _id: `enrichment:${day}`, count: { $lt: limit } },
+      { _id: `${kind}:${day}`, count: { $lt: limit } },
       { $inc: { count: 1 }, $setOnInsert: { day } },
       { upsert: true, new: true },
     );
@@ -52,6 +52,22 @@ export async function reserveEnrichment({ limit = env.ENRICHMENT_DAILY_LIMIT, no
   }
 }
 
+export function reserveEnrichment({ limit = env.ENRICHMENT_DAILY_LIMIT, now } = {}) {
+  return reserve('enrichment', { limit, now });
+}
+
+/**
+ * The same reservation for the embedding stage, against its own counter.
+ *
+ * Deliberately a separate budget rather than a share of enrichment's. They are
+ * separate bills with roughly two orders of magnitude between them, and a
+ * summarisation budget spent by lunchtime must not also stop the day's
+ * bookmarks becoming searchable by meaning.
+ */
+export function reserveEmbedding({ limit = env.EMBEDDING_DAILY_LIMIT, now } = {}) {
+  return reserve('embedding', { limit, now });
+}
+
 /**
  * Reads the day's spend without reserving any of it.
  *
@@ -61,12 +77,20 @@ export async function reserveEnrichment({ limit = env.ENRICHMENT_DAILY_LIMIT, no
  * would cycle through claim, refuse and release on every lease expiry, burning
  * database writes to discover the same answer repeatedly.
  */
-export async function enrichmentUsage({ limit = env.ENRICHMENT_DAILY_LIMIT, now = new Date() } = {}) {
+async function usageFor(kind, { limit, now = new Date() }) {
   const day = dayKey(now);
-  const usage = await DailyUsage.findById(`enrichment:${day}`);
+  const usage = await DailyUsage.findById(`${kind}:${day}`);
   const count = usage?.count ?? 0;
 
   return { count, limit, remaining: Math.max(0, limit - count), exhausted: count >= limit, day };
+}
+
+export function enrichmentUsage({ limit = env.ENRICHMENT_DAILY_LIMIT, now } = {}) {
+  return usageFor('enrichment', { limit, now });
+}
+
+export function embeddingUsage({ limit = env.EMBEDDING_DAILY_LIMIT, now } = {}) {
+  return usageFor('embedding', { limit, now });
 }
 
 /**

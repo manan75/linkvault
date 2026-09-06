@@ -1,10 +1,9 @@
 /**
  * The event log's topics.
  *
- * `CLAUDE.md` names five events. Only the ones something actually produces or
- * consumes are created -- a topic nothing reads is a place for messages to
- * accumulate unnoticed. `embedding.created` (Phase 6) is deliberately absent
- * until it has a producer; `link.enriched` gained one in Phase 5.
+ * `CLAUDE.md` names five events and all five now exist, each with a producer.
+ * The rule that kept `embedding.created` out until Phase 6 still stands: a
+ * topic nothing writes to is a place for a subscriber to wait forever.
  *
  * Note on the names: Kafka warns that topics mixing `.` and `_` can collide in
  * metric names. Everything here uses `.` and nothing uses `_`, so there is
@@ -16,12 +15,19 @@ export const TOPICS = {
   /** Extraction finished. Consumed by the enrichment worker. */
   METADATA_EXTRACTED: 'metadata.extracted',
   /**
-   * A summary and auto-tags were written. Nothing consumes this yet -- Phase 6
-   * subscribes to it to generate the embedding, which is exactly why the
-   * enrichment worker publishes it now rather than later: the event is the
-   * seam, and adding a consumer later must not require touching this worker.
+   * A summary and auto-tags were written. Consumed by the embedding worker,
+   * which is what this event was published into an empty topic for: the seam
+   * held, and Phase 6 attached a consumer without touching Phase 5's producer.
    */
   LINK_ENRICHED: 'link.enriched',
+  /**
+   * A link has a vector and is now findable by description. Nothing consumes
+   * this -- it is the end of the pipeline. Published anyway, on the same
+   * reasoning that left `link.enriched` unconsumed for a phase: a stage that
+   * announces its result can be built on without being reopened, and a
+   * "reindex my vault" or an activity feed would both start here.
+   */
+  EMBEDDING_CREATED: 'embedding.created',
   /** A stage gave up on a link. Observability only -- retries live in the document. */
   PROCESSING_FAILED: 'link.processing.failed',
 };

@@ -2,7 +2,7 @@ import { connectDatabase, disconnectDatabase } from '../config/db.js';
 import { env } from '../config/env.js';
 import { eventBus } from '../events/index.js';
 import { createShutdown, listenForShutdown } from '../utils/shutdown.js';
-import { enrichmentWorker, metadataWorker } from './runtime.js';
+import { embeddingWorker, enrichmentWorker, metadataWorker } from './runtime.js';
 
 /**
  * The worker process.
@@ -38,9 +38,9 @@ async function start() {
   await metadataWorker.start();
   console.log('Metadata worker consuming link.created');
 
-  // Both consumers share this process. Splitting them is a scaling decision
-  // with no evidence behind it yet, and the process boundary that mattered --
-  // off the API -- is already crossed.
+  // All three consumers share this process. Splitting them is a scaling
+  // decision with no evidence behind it yet, and the process boundary that
+  // mattered -- off the API -- is already crossed.
   if (env.ENABLE_ENRICHMENT) {
     await enrichmentWorker.start();
     console.log(`Enrichment worker consuming metadata.extracted using ${env.OPENAI_MODEL}`);
@@ -49,6 +49,17 @@ async function start() {
       env.OPENAI_API_KEY
         ? 'Enrichment disabled (ENABLE_ENRICHMENT=false) — no summaries or auto-tags'
         : 'Enrichment disabled: no OPENAI_API_KEY set — no summaries or auto-tags',
+    );
+  }
+
+  if (env.ENABLE_EMBEDDINGS) {
+    await embeddingWorker.start();
+    console.log(`Embedding worker consuming link.enriched using ${env.EMBEDDING_MODEL}`);
+  } else {
+    console.warn(
+      env.OPENAI_API_KEY
+        ? 'Embeddings disabled (ENABLE_EMBEDDINGS=false) — search is keyword only'
+        : 'Embeddings disabled: no OPENAI_API_KEY set — search is keyword only',
     );
   }
 }
@@ -62,7 +73,12 @@ async function start() {
 const shutdown = createShutdown({
   timeoutMs: env.SHUTDOWN_TIMEOUT_MS,
   steps: [
-    () => Promise.allSettled([metadataWorker.stop(), enrichmentWorker.stop()]),
+    () =>
+      Promise.allSettled([
+        metadataWorker.stop(),
+        enrichmentWorker.stop(),
+        embeddingWorker.stop(),
+      ]),
     () => eventBus.stop(),
     () => disconnectDatabase(),
   ],

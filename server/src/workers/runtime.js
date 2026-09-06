@@ -1,6 +1,7 @@
 import { env } from '../config/env.js';
 import { eventBus } from '../events/index.js';
-import { enrichmentUsage } from '../services/usage.js';
+import { embeddingUsage, enrichmentUsage } from '../services/usage.js';
+import { createEmbeddingWorker } from './embeddingWorker.js';
 import { createEnrichmentWorker } from './enrichmentWorker.js';
 import { createMetadataWorker } from './metadataWorker.js';
 import { createReaper } from './reaper.js';
@@ -26,8 +27,15 @@ export const reaper = createReaper({
   // to pay for. The worker enforces the ceiling; this keeps a spent budget from
   // turning into a night of pointless database churn.
   hasEnrichmentBudget: async () => !(await enrichmentUsage()).exhausted,
+  // The same two guards for the third stage, and separate from enrichment's on
+  // purpose: a spent summarisation budget must not stop the day's bookmarks
+  // becoming searchable by meaning. They are different bills.
+  embeddingEnabled: env.ENABLE_EMBEDDINGS,
+  hasEmbeddingBudget: async () => !(await embeddingUsage()).exhausted,
 });
 
 export const metadataWorker = createMetadataWorker({ bus: eventBus });
 
 export const enrichmentWorker = createEnrichmentWorker({ bus: eventBus });
+
+export const embeddingWorker = createEmbeddingWorker({ bus: eventBus });

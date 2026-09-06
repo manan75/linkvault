@@ -1,6 +1,11 @@
 import { TOPICS } from '../events/topics.js';
 import { withDeadline } from '../utils/withDeadline.js';
 import {
+  claimForEmbeddingQueue,
+  reclaimStaleEmbedding,
+  releaseEmbeddingToPending,
+} from './embeddingQueue.js';
+import {
   claimForEnrichmentQueue,
   reclaimStaleEnrichment,
   releaseEnrichmentToPending,
@@ -70,12 +75,20 @@ export function createReaper({
    * repeatedly declining to feed on it.
    */
   hasEnrichmentBudget = async () => true,
+  /**
+   * Whether to sweep for links awaiting an embedding. Off means they wait at
+   * `pending` with no consumer to receive them, exactly as enrichment does.
+   */
+  embeddingEnabled = true,
+  /** Whether there is budget left to embed anything today. See above. */
+  hasEmbeddingBudget = async () => true,
   logger = console,
 } = {}) {
   let timer = null;
   let isTicking = false;
   let publishPausedUntil = 0;
   let budgetExhausted = false;
+  let embeddingBudgetExhausted = false;
 
   /** Claims one link and publishes it. Returns the link, or null if none was due. */
   async function queueOne() {
@@ -131,6 +144,36 @@ export function createReaper({
     }
   }
 
+  /** Claims one link awaiting an embedding and publishes `link.enriched`. */
+  async function queueOneForEmbedding() {
+    const link = await claimForEmbeddingQueue();
+    if (!link) return null;
+
+    try {
+      await withDeadline(
+        // The same event the enrichment worker emits, for the same reason the
+        // enrichment sweep reuses `metadata.extracted`: the consumer cannot
+        // tell a recovery from a first delivery and should not have to.
+        //
+        // It is also the only way links that never reach enrichment at all get
+        // embedded -- no API key, nothing worth summarising, a failed call --
+        // because for those the live message is never published by anyone.
+        bus.publish(TOPICS.LINK_ENRICHED, link.id, {
+          linkId: link.id,
+          userId: link.userId.toString(),
+          occurredAt: new Date().toISOString(),
+        }),
+        publishTimeoutMs,
+        `publish did not complete within ${publishTimeoutMs}ms`,
+      );
+
+      return link;
+    } catch (error) {
+      await releaseEmbeddingToPending(link.id);
+      throw error;
+    }
+  }
+
   /**
    * Publishes up to `batchSize` links from one stage, pausing the whole reaper
    * on the first failure.
@@ -165,13 +208,17 @@ export function createReaper({
     // Always first, and never behind the publish loop. This is what recovers
     // links stranded by the very outages that stop publishing from working, so
     // it must not share their fate.
-    const [extraction, enrichment] = await Promise.all([
+    const idle = { lostMessages: 0, abandonedWork: 0 };
+
+    const [extraction, enrichment, embedding] = await Promise.all([
       reclaimStale(),
-      enrichmentEnabled ? reclaimStaleEnrichment() : { lostMessages: 0, abandonedWork: 0 },
+      enrichmentEnabled ? reclaimStaleEnrichment() : idle,
+      embeddingEnabled ? reclaimStaleEmbedding() : idle,
     ]);
 
-    const lostMessages = extraction.lostMessages + enrichment.lostMessages;
-    const abandonedWork = extraction.abandonedWork + enrichment.abandonedWork;
+    const stages = [extraction, enrichment, embedding];
+    const lostMessages = stages.reduce((sum, stage) => sum + stage.lostMessages, 0);
+    const abandonedWork = stages.reduce((sum, stage) => sum + stage.abandonedWork, 0);
 
     if (lostMessages > 0) {
       logger.warn?.(`[reaper] ${lostMessages} link(s) never reached a consumer, requeued`);
@@ -201,6 +248,23 @@ export function createReaper({
       budgetExhausted = !funded;
 
       if (funded) published += await publishBatch(queueOneForEnrichment);
+    }
+
+    // Last, because a link is worth embedding once its summary and tags exist,
+    // and because a stalled embedding stage is the least visible of the three:
+    // the bookmark works and is findable by keyword either way.
+    if (embeddingEnabled && Date.now() >= publishPausedUntil) {
+      const funded = await hasEmbeddingBudget();
+
+      if (!funded && !embeddingBudgetExhausted) {
+        logger.warn?.('[reaper] daily embedding budget spent, holding links until it resets');
+      } else if (funded && embeddingBudgetExhausted) {
+        logger.log?.('[reaper] embedding budget available again, resuming');
+      }
+
+      embeddingBudgetExhausted = !funded;
+
+      if (funded) published += await publishBatch(queueOneForEmbedding);
     }
 
     return published;

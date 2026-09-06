@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { env } from '../config/env.js';
 import { MAX_AUTO_TAGS } from '../utils/tags.js';
 import { EnrichmentError } from './enrichmentError.js';
+import { classifyOpenAI } from './providerError.js';
 
 /**
  * Summary and tag generation, and the only file in the project that knows a
@@ -145,41 +146,20 @@ function buildUserPrompt({ title, description }, vocabulary) {
 /**
  * Translates an SDK error into the retryable/permanent split the queue needs.
  *
- * Ordered most specific first, because the SDK's error classes are a hierarchy
- * and a single broad `instanceof APIError` would swallow the distinction
- * between "the provider is briefly unwell" and "this request can never
- * succeed". Phase 3's third bug was a timeout misclassified as permanent; not
- * repeating it lives here.
+ * The table itself lives in `providerError.js`, shared with the embedding
+ * service: the two stages fail independently, but an OpenAI 429 means the same
+ * thing to both, and a second copy of that mapping is a second place for the
+ * misclassified-timeout bug to come back.
  */
 function classify(error) {
   if (error instanceof EnrichmentError) return error;
 
-  if (error instanceof OpenAI.APIConnectionTimeoutError) {
-    return new EnrichmentError('The model timed out', { retryable: true });
-  }
-  if (error instanceof OpenAI.APIConnectionError) {
-    return new EnrichmentError('Could not reach the model', { retryable: true });
-  }
-  if (error instanceof OpenAI.RateLimitError) {
-    return new EnrichmentError('Rate limited by the model', { retryable: true, status: 429 });
-  }
-  if (error instanceof OpenAI.InternalServerError) {
-    return new EnrichmentError('The model is unavailable', {
-      retryable: true,
-      status: error.status,
-    });
-  }
-  // 400, 401, 403, 404 and anything else carrying a status: retrying an
-  // identical request cannot change the answer.
-  if (error instanceof OpenAI.APIError) {
-    return new EnrichmentError(`The model rejected the request (${error.status})`, {
-      status: error.status,
-    });
-  }
-
-  // A schema-validation failure from `responses.parse`, or a bug in here.
-  // Neither gets better on a second attempt.
-  return new EnrichmentError(`Enrichment failed: ${error.message}`);
+  return classifyOpenAI(error, {
+    make: (message, options) => new EnrichmentError(message, options),
+    // A schema-validation failure from `responses.parse`, or a bug in here.
+    // Neither gets better on a second attempt.
+    onUnknown: (unknown) => new EnrichmentError(`Enrichment failed: ${unknown.message}`),
+  });
 }
 
 let client;

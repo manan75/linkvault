@@ -29,6 +29,23 @@ export const ENRICHMENT_STATUSES = [
   'failed',
 ];
 
+/**
+ * Embedding runs a third state machine, separate again and for the same reason.
+ *
+ * A link that could not be embedded is still a perfectly good bookmark and is
+ * still findable by keyword -- it is only absent from semantic results. So this
+ * never marks a link broken either, and nothing in the UI reports it as an
+ * error.
+ *
+ * Unlike the other two, this machine returns to `pending` during ordinary life:
+ * editing a title or writing a summary changes what the link means, so the
+ * vector describing it is out of date. There is no separate `stale` state
+ * because there is nothing different to do about it -- the link stays fully
+ * searchable by its existing vector until the new one lands, and the sweep that
+ * picks up `pending` work is already the right sweep.
+ */
+export const EMBEDDING_STATUSES = ['pending', 'queued', 'processing', 'done', 'skipped', 'failed'];
+
 const linkSchema = new mongoose.Schema(
   {
     userId: {
@@ -170,6 +187,34 @@ const linkSchema = new mongoose.Schema(
     enrichmentQueuedAt: { type: Date, default: null },
     enrichmentStartedAt: { type: Date, default: null },
     enrichedAt: { type: Date, default: null },
+
+    // --- Embedding (Phase 6) ---
+    // The third copy of the same lease and retry bookkeeping, for the third
+    // time for the same reason: a redelivered event must not bill a second
+    // call, and a consumer that dies mid-call must not strand the link.
+    embeddingStatus: {
+      type: String,
+      enum: EMBEDDING_STATUSES,
+      default: 'pending',
+    },
+    embeddingAttempts: { type: Number, default: 0 },
+    embeddingError: { type: String, trim: true, maxlength: 300, default: '' },
+    embeddingQueuedAt: { type: Date, default: null },
+    embeddingStartedAt: { type: Date, default: null },
+    embeddedAt: { type: Date, default: null },
+    /**
+     * A fingerprint of the text the stored vector was built from, and of the
+     * model that built it.
+     *
+     * Two jobs. It stops a redelivered event paying for a vector identical to
+     * the one already stored -- enrichment writing the same summary twice is
+     * routine, and the claim alone cannot tell that apart from a real change.
+     * And because the model name is part of it, changing `EMBEDDING_MODEL` or
+     * `EMBEDDING_DIMENSIONS` invalidates the whole corpus automatically:
+     * vectors from two models are points in unrelated spaces and comparing them
+     * is meaningless, so that has to be noticed rather than migrated.
+     */
+    embeddingFingerprint: { type: String, default: '' },
   },
   { timestamps: { createdAt: 'savedAt', updatedAt: 'updatedAt' } },
 );
@@ -190,6 +235,11 @@ linkSchema.index({ processingStatus: 1, savedAt: 1 });
 // Serves the enrichment half of the same sweep, which only ever looks at links
 // extraction has already finished with.
 linkSchema.index({ enrichmentStatus: 1, processingStatus: 1, savedAt: 1 });
+
+// And the embedding half. Not scoped by `processingStatus` like the one above:
+// a link whose extraction failed still has whatever the user typed and whatever
+// the extension captured, and that is often enough to embed.
+linkSchema.index({ embeddingStatus: 1, savedAt: 1 });
 
 /**
  * Keyword search, and the keyword half of the hybrid search.
@@ -230,8 +280,30 @@ linkSchema.index({ userId: 1, searchTokens: 1 }, { name: 'link_keyword_prefix' }
 linkSchema.pre('save', function rebuildSearchTokens(next) {
   const touched = ['title', 'description', 'summary', 'tags', 'author', 'domain', 'url'];
 
-  if (this.isNew || touched.some((path) => this.isModified(path))) {
-    this.searchTokens = buildSearchTokens(this);
+  if (!this.isNew && !touched.some((path) => this.isModified(path))) return next();
+
+  this.searchTokens = buildSearchTokens(this);
+
+  /**
+   * The same change that invalidates the token set invalidates the vector.
+   *
+   * Without this, a link embedded from a bare title before enrichment ran would
+   * keep that vector forever and never learn the summary written for it -- and
+   * the summary is the single most useful thing in the embedding input. A user
+   * correcting a title would likewise be searching by meaning against the old
+   * one indefinitely.
+   *
+   * `queued` and `processing` are deliberately left alone: a message is in
+   * flight or a call is open against them, and resetting a claim out from under
+   * a worker is how two consumers end up writing the same document. The worker
+   * finishes, sets `done`, and the fingerprint mismatch brings it back here on
+   * the next edit. Links already `pending` are simply already correct.
+   */
+  if (!this.isNew && ['done', 'skipped', 'failed'].includes(this.embeddingStatus)) {
+    this.embeddingStatus = 'pending';
+    this.embeddingAttempts = 0;
+    this.embeddingError = '';
+    this.embeddingQueuedAt = null;
   }
 
   next();
@@ -267,6 +339,12 @@ linkSchema.methods.toPublicJSON = function toPublicJSON() {
     // summary" hint.
     enrichmentStatus: this.enrichmentStatus,
     enrichedAt: this.enrichedAt,
+    // Exposed on the same terms and for the same reason: a link that has not
+    // been embedded is not broken, it is merely absent from semantic results
+    // until it is. The client uses this only to say a link is still being
+    // indexed, never to mark it as failed.
+    embeddingStatus: this.embeddingStatus,
+    embeddedAt: this.embeddedAt,
     savedAt: this.savedAt,
     updatedAt: this.updatedAt,
   };

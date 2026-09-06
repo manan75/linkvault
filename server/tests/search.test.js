@@ -150,11 +150,11 @@ describe('keyword search', () => {
 
     const strict = await list(cookie, '?q=redis%20caching');
     assert.equal(strict.body.total, 1);
-    assert.equal(strict.body.relaxed, false);
+    assert.equal(strict.body.search.relaxed, false);
 
     const relaxed = await list(cookie, '?q=make%20my%20backend%20snappier');
     assert.equal(relaxed.body.total, 1);
-    assert.equal(relaxed.body.relaxed, true);
+    assert.equal(relaxed.body.search.relaxed, true);
     assert.deepEqual(titles(relaxed.body), ['Redis Caching Strategies']);
   });
 
@@ -166,7 +166,7 @@ describe('keyword search', () => {
     const { body } = await list(cookie, '?q=zzzz');
 
     assert.equal(body.total, 0);
-    assert.equal(body.relaxed, false);
+    assert.equal(body.search.relaxed, false);
   });
 
   it('applies the structural filters to a search as well as to a listing', async () => {
