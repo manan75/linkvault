@@ -100,6 +100,7 @@ export function DashboardPage() {
               onClear={vault.clearFilters}
               hasActiveFilters={vault.hasActiveFilters}
               total={vault.total}
+              search={vault.search}
             />
 
             {vault.error ? (

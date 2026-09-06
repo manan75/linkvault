@@ -28,6 +28,38 @@ function readStateLabel(current) {
   return 'Read state';
 }
 
+/**
+ * Says what the search actually did, when it did something the results alone
+ * would not explain.
+ *
+ * Both cases are ones where staying silent makes the search look broken rather
+ * than honest. A relaxed query returns links that share only some of the typed
+ * words, which is inexplicable without a line saying so. A failed semantic half
+ * silently removes the ability to search by description, and the only visible
+ * symptom is that a query that worked yesterday finds nothing today.
+ */
+function SearchNote({ search, query }) {
+  if (!search || !query) return null;
+
+  if (search.semanticFailed) {
+    return (
+      <p className="text-xs text-ink-muted">
+        Searching by words only &mdash; matching by meaning is unavailable right now.
+      </p>
+    );
+  }
+
+  if (search.relaxed) {
+    return (
+      <p className="text-xs text-ink-muted">
+        No link matches every word, so these match some of them.
+      </p>
+    );
+  }
+
+  return null;
+}
+
 export function FilterBar({
   filters,
   searchInput,
@@ -36,6 +68,7 @@ export function FilterBar({
   onClear,
   hasActiveFilters,
   total,
+  search,
 }) {
   return (
     <div className="space-y-3">
@@ -43,10 +76,12 @@ export function FilterBar({
         type="search"
         value={searchInput}
         onChange={(event) => onSearchInput(event.target.value)}
-        placeholder="Search your links"
+        placeholder="Search your links, or describe one"
         aria-label="Search your links"
         className="lv-field w-full"
       />
+
+      <SearchNote search={search} query={filters.q} />
 
       <div className="flex flex-wrap items-center gap-2">
         <Chip

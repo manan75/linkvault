@@ -42,6 +42,9 @@ export function useVault() {
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [hasMore, setHasMore] = useState(false);
+  // What the server did to answer the last search: whether it had to loosen the
+  // query, and whether meaning was part of the ranking. Null while browsing.
+  const [search, setSearch] = useState(null);
 
   const [collections, setCollections] = useState([]);
   const [uncategorisedCount, setUncategorisedCount] = useState(0);
@@ -64,6 +67,7 @@ export function useVault() {
         setLinks(data.links);
         setTotal(data.total);
         setHasMore(data.hasMore);
+        setSearch(data.search ?? null);
         setPage(1);
         setError(null);
       })
@@ -266,6 +270,7 @@ export function useVault() {
 
     links,
     total,
+    search,
     hasMore,
     loadMore,
     isLoading,
