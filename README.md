@@ -7,14 +7,17 @@ See [`CLAUDE.md`](./CLAUDE.md) for the full product spec and architecture.
 
 ## Status
 
-**Phase 5 complete, and hardened for deployment** — everything from Phase 4, plus
-generated summaries and tags. A second worker consumes `metadata.extracted`, asks a
-model for a short summary and up to five tags, and writes them back.
+**Phase 6 complete** — everything from Phase 5, plus embeddings and search that can
+answer a description. A third worker consumes `link.enriched`, embeds the bookmark and
+publishes `embedding.created`; search fuses a keyword half and a semantic half.
 
-The deployment pass on top of it added rate limiting, a per-user bookmark cap, a global
-daily enrichment ceiling, `helmet`, and a graceful shutdown that drains both workers
+The keyword half was rebuilt in the same pass, because it was broken in a way no
+amount of tuning fixed. See [Search](#search) below, and
+[`docs/2026-09-06-phase-6-search.md`](./docs/2026-09-06-phase-6-search.md).
+
+The earlier deployment pass added rate limiting, a per-user bookmark cap, a global
+daily enrichment ceiling, `helmet`, and a graceful shutdown that drains every worker
 rather than severing them. See [`docs/2026-09-02-deploy-v1.md`](./docs/2026-09-02-deploy-v1.md).
-Embeddings and semantic search are next.
 
 ## Layout
 
@@ -116,8 +119,15 @@ POST /api/links ──► MongoDB (pending)
                                                      ▼
                                             enrichment worker ──► MongoDB (summary, autoTags)
                                                      │
-                                                     ├─► link.enriched   (Phase 6 consumes)
-                                                     └─► link.processing.failed
+                                                     ├─► link.processing.failed
+                                                     │
+                                                     └─► link.enriched
+                                                                │
+                                                                ▼
+                                                      embedding worker ──► MongoDB (embedding)
+                                                                │
+                                                                ├─► embedding.created
+                                                                └─► link.processing.failed
 ```
 
 A link moves `pending → queued → processing → ready | failed`. The **reaper** claims
@@ -125,17 +135,26 @@ pending links, marks them `queued`, and publishes; the **worker** claims `queued
 fetches and parses them, and writes back. Extraction fills only fields the user left
 empty, so typed values are never overwritten.
 
-**Enrichment is a separate state machine, on purpose.** A link reaches `ready` on
+**Each stage is a separate state machine, on purpose.** A link reaches `ready` on
 extraction alone and `enrichmentStatus` advances beside it, because a bookmark whose
 summary failed is still a perfectly good bookmark — it has a title, a favicon and a URL,
 and it opens. The dashboard shows a summary when there is one and shows nothing where
 there is not; there is no error state for a failed enrichment, and retrying is the
 reaper's job rather than a button.
 
-Redelivery is stopped by the same status-based claim extraction uses, which here is also
-the cost control: a repeated event bills nothing. A link with no description whose title
-is merely its own domain is `skipped` without a call at all — there is nothing to
-summarise, and asking anyway is the strongest temptation there is to invent.
+The same holds a stage further along: a link that could not be embedded is not broken,
+it is only absent from semantic results, and it stays fully findable by keyword.
+Embedding is the one stage that returns to `pending` during ordinary life — editing a
+title or writing a summary changes what a link means, so the vector describing it is out
+of date. The link keeps its old vector until the new one lands.
+
+Redelivery is stopped by the same status-based claim extraction uses, which for both
+paid stages is also the cost control: a repeated event bills nothing. A link with no
+description whose title is merely its own domain is `skipped` without a call at all —
+there is nothing to summarise, and asking anyway is the strongest temptation there is to
+invent. Embedding adds a second control the claim cannot give it: a fingerprint of the
+input text and the model, so re-running enrichment and producing an identical summary
+does not buy a byte-for-byte identical vector.
 
 **Why a reaper instead of publishing on save.** Committing to MongoDB and then publishing
 is a dual write: if the publish fails, the event never exists and the link waits at
@@ -159,10 +178,44 @@ swaps in an in-process bus and runs the worker inside the API — the same reape
 consumer, the same state machine, just no broker and no process boundary.
 `ENABLE_METADATA_WORKER=false` turns the pipeline off entirely.
 
-`OPENAI_API_KEY` enables enrichment; without one it disables itself and every other
-stage keeps working. `OPENAI_MODEL` selects the model and defaults to `gpt-5-mini`.
-`ENABLE_ENRICHMENT=false` turns it off with a key present. Startup logs which of these
-is in effect, so links are never left un-enriched with nothing in the log explaining why.
+`OPENAI_API_KEY` enables enrichment and embeddings; without one both disable themselves
+and every other stage keeps working. `OPENAI_MODEL` selects the summarisation model and
+defaults to `gpt-5-mini`; `EMBEDDING_MODEL` defaults to `text-embedding-3-small` at
+`EMBEDDING_DIMENSIONS=512`. `ENABLE_ENRICHMENT=false` and `ENABLE_EMBEDDINGS=false` turn
+either off with a key present. Startup logs which of these is in effect, so search is
+never quietly keyword-only with nothing in the log explaining why.
+
+## Search
+
+Two halves, fused, because neither answers what the other does.
+
+**Words.** Every term must match, and each matches by prefix, so results narrow with
+every keystroke instead of appearing only once a whole word lands. Typing `postg` finds
+`PostgreSQL Indexing`; typing `sql` finds it too, because compound words are split at
+their camel-case boundary as well as kept whole. When no bookmark contains every word
+typed — which is what happens when someone types a sentence — the query relaxes to the
+words that carry meaning, and the UI says that is what it did.
+
+This replaced MongoDB's `$text` index, which could do neither. It matched whole
+*stemmed* words, so `reac`, `kafk` and `postg` all returned nothing, and it ORed its
+terms, so every word added made the result set **larger**. A handful of prefixes seemed
+to work (`redi`, `cach`) purely because the English stemmer maps `redis` to `redi`,
+which is why the failure read as intermittent rather than total.
+
+**Meaning.** The bookmark's title, summary, tags and — for pages the server cannot
+reach — the text the browser extension captured are embedded into one vector. So is the
+query. *"make my backend snappier"* finds *"Redis Caching Strategies"* with no word in
+common, which is the thing this product exists to do.
+
+The two are combined by reciprocal rank rather than by score, since a weighted term
+count and a cosine similarity are not comparable in any units. A similarity floor is
+what lets semantic search return *nothing* rather than the nearest stranger. If the
+embedding provider is unreachable the search degrades to words alone and says so, rather
+than failing.
+
+**Upgrading an existing deployment.** `npm --prefix server run reindex` backfills the
+token field on existing links and drops the old text index. It is safe to run twice.
+Embeddings need no migration: the reaper picks up every un-embedded link on its own.
 
 ## Tags
 
@@ -193,8 +246,8 @@ logout is a real server-side action.
 
 In production the cookie is `Secure` and `SameSite=None`, because the client is served
 from a different domain than the API. That makes it a third-party cookie: **Safari and
-iOS browsers block it, so v1 is Chrome-first.** A Bearer-token path is planned after
-Phase 6 and removes the constraint. It also makes `CLIENT_ORIGIN` load-bearing rather
+iOS browsers block it, so v1 is Chrome-first.** The Bearer-token path added for the
+extension removes the constraint for clients that can hold a token. It also makes `CLIENT_ORIGIN` load-bearing rather
 than decorative — it must name the client's exact origin.
 
 ## Limits
@@ -208,6 +261,7 @@ Registration is open, so the caps are what bound cost and abuse:
 | Link saves | 20 / hour | per user |
 | Bookmarks | `MAX_LINKS_PER_USER` (100) | per user |
 | Enrichment calls | `ENRICHMENT_DAILY_LIMIT` (200) | global, per day |
+| Embedding calls | `EMBEDDING_DAILY_LIMIT` (2000) | global, per day |
 
 The first three are throttles and live in memory. The last two bound real money and live
 in MongoDB, so they survive the restarts a free instance does constantly. Over the daily

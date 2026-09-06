@@ -22,7 +22,47 @@ Read in this order when picking the project back up.
 | [2026-09-02-deploy-v1.md](./2026-09-02-deploy-v1.md) | Deploy v1: what shipped, the cookie decision and what it costs, the spending bounds, graceful shutdown, and the provisioning handover |
 | [2026-09-03-deploy-v1-live.md](./2026-09-03-deploy-v1-live.md) | Deploy v1 is live: what the dashboards actually needed, the sites that block a datacenter IP, the URL-derived title fallback, and the fix list and extension path for next time |
 | [2026-09-04-extension.md](./2026-09-04-extension.md) | The title and tagging fixes, bearer tokens, page capture ahead of Phase 6 and its Important Rule argument, and the Chrome Web Store deployment checklist |
-| [2026-09-04-next-steps.md](./2026-09-04-next-steps.md) | oEmbed, gzip and the deep health check; why "search is bad" is two problems living in different places; and the extension / v1-fixes / Phase 6 decision to be talked through. **Start here for the next session.** |
+| [2026-09-04-next-steps.md](./2026-09-04-next-steps.md) | oEmbed, gzip and the deep health check; why "search is bad" is two problems living in different places; and the extension / v1-fixes / Phase 6 decision to be talked through |
+| [2026-09-06-phase-6-search.md](./2026-09-06-phase-6-search.md) | Phase 6: the three defects in `$text` and what replaced it, the embedding-runtime decision and its Important Rule argument, hybrid ranking, and what is measured versus what is still a guess. **Start here for the next session.** |
+
+---
+
+## State of play (as of 2026-09-06)
+
+**Phase 6 shipped, and it shipped with the keyword search rebuilt underneath it.** The two
+turned out to be one piece of work: the hybrid search keeps a keyword half, and the keyword half
+was broken in a way no tuning fixed.
+
+Measuring the old search before touching it found **three** defects rather than the one the
+2026-09-04 note recorded. `$text` matches whole *stemmed* words, so `reac`, `kafk`, `postg` and
+`javas` all returned **nothing** -- the search box showed an empty library until the final
+character of a word landed. `redi` and `cach` appearing to work was a coincidence of the English
+stemmer (`redis` stems to `redi`), which is exactly why the failure felt intermittent. And its
+terms are ORed, so `kafka react postgres` returned **all three** documents: adding a word made
+the result set *larger*, which is the reported "isn't filtering out the correct links", precisely.
+
+That was replaced with materialised tokens on the document and anchored prefix clauses over a
+multikey index **prefixed by `userId`** -- which also closes the efficiency finding, since the
+old index could not scope its scan to the owner. Every term must match; when no link matches all
+of them (someone typed a sentence) the query relaxes and the response says so, rather than
+quietly showing looser results.
+
+The embedding runtime decision went to **the hosted OpenAI API**, not the Sentence Transformers
+service `CLAUDE.md` names. The Important Rule argument is at the top of
+`server/src/services/embedding.js`: the free tier's 750 instance-hours against a 730-hour month
+allows exactly one always-warm service and the API already is it, and `transformers.js` in
+process is ~250-350MB resident on a 512MB instance already running the API and three workers.
+About $0.00002 per bookmark.
+
+**The seam held.** `link.enriched` had been published into an empty topic since Phase 5 so that a
+consumer could be added without reopening that worker, and Phase 6 did exactly that -- the
+enrichment worker was not touched.
+
+**What is not verified: no real embedding has ever been generated.** Every test injects a fake,
+so the suite says nothing about embedding quality, and `MIN_SIMILARITY = 0.3` is a guess in the
+right neighbourhood rather than a measurement. Tuning it against a real vault is the first thing
+to do next session, after `npm --prefix server run reindex` is run against Atlas -- **search
+returns nothing for existing links until that migration runs.**
 
 ---
 
