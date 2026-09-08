@@ -251,3 +251,54 @@ Unchanged from the [previous note](./2026-09-04-next-steps.md) unless marked.
 - **New:** search result highlighting still does not exist. With prefix-AND matching the
   connection between query and result is much more obvious than it was under stemmed OR,
   so this is less pressing than the previous note made it — but it is not nothing.
+
+---
+
+## 8. After the fact — the migration, and the half of prefix matching that was missing (2026-09-08)
+
+**The reindex ran.** Against the live Atlas database: `link_keyword_search` dropped, four
+links rewritten. Step 2 of §6 is done, and the note there about existing links returning
+nothing no longer applies to this deployment.
+
+It also confirmed the shape of the complaint that prompted this. The vault held 15 links
+and **13 of them had no `searchTokens` at all** — everything saved before the field
+existed. The links saved after the deploy carried tokens and were perfectly findable; the
+older ones could not be found by anything. That is the migration doing exactly what it
+was written for, not a defect in the matching.
+
+**But measuring it turned up a real one.** Prefix matching only runs in one direction: a
+document token has to begin with what was typed. Typing *less* than the page says has
+always worked, and typing *more* silently found nothing. Against a real bookmark whose
+summary read "Listing of open roles":
+
+```
+"listing"  -> 1 hit
+"listings" -> 0 hits
+```
+
+Typing a plural where the page used a singular is an ordinary thing to do, and an empty
+result there is indistinguishable from the bug this phase existed to fix.
+
+The fix reduces the **query** to a stem and matches the stem as the prefix. No second
+clause is needed, because a stem is already a prefix of the word it came from: `^listing`
+matches the token `listing` and the token `listings` both, and it is still one literal
+anchored prefix, so it is still one index seek.
+
+Three things about it are deliberate:
+
+- **Query-side only.** The document side stays literal, so what is stored is still exactly
+  what was written. Rewriting *both* sides invisibly is what made `$text` unpredictable,
+  and this note argues that at length in §1.
+- **Not a stemmer.** A short list of English inflections (`ies`, `ing`, `ers`, `es`, `ed`,
+  `er`, `s`), the most aggressive one that applies, and nothing that maps a word to
+  something no reader would recognise.
+- **A four-character floor on the stem, which is the whole safety of it.** Stripping
+  widens. Unbounded, `cars` becomes `car` and finds `careers`; `tags` becomes `tag` and
+  finds `target`. The floor keeps the genuine inflections and rejects the short words
+  where the stem carries too little to be worth the noise.
+
+`scoreKeyword` applies the same reduction, because the filter and the scorer have to
+agree — a link matched on a term the scorer did not recognise would score zero against
+the very word that found it and sink to the bottom of its own results. Both stem and
+typed form count as whole-word matches, so shortening the match cannot cost a link its
+exact-match ranking.
