@@ -8,7 +8,9 @@ import { clearTestDatabase, signUp, startTestDatabase, stopTestDatabase } from '
 const { createApp } = await import('../src/app.js');
 const { Link } = await import('../src/models/Link.js');
 const { reindexKeywords } = await import('../src/services/searchIndex.js');
-const { tokenize, buildSearchTokens, queryTerms } = await import('../src/services/searchTokens.js');
+const { tokenize, buildSearchTokens, matchPrefix, queryTerms } = await import(
+  '../src/services/searchTokens.js',
+);
 
 const app = createApp();
 
@@ -67,6 +69,19 @@ describe('the search tokenizer', () => {
     assert.ok(!tokens.includes('https'));
     assert.ok(!tokens.includes('www'));
   });
+  it('reduces a typed inflection to the stem it is matched by', () => {
+    assert.equal(matchPrefix('listings'), 'listing');
+    assert.equal(matchPrefix('caching'), 'cach');
+    assert.equal(matchPrefix('libraries'), 'librar');
+    assert.equal(matchPrefix('watches'), 'watch');
+  });
+
+  it('leaves a term alone when the stem would be too short to mean anything', () => {
+    // "car" would otherwise match "careers", and "tag" would match "target".
+    assert.equal(matchPrefix('cars'), 'cars');
+    assert.equal(matchPrefix('tags'), 'tags');
+    assert.equal(matchPrefix('react'), 'react');
+  });
 });
 
 describe('keyword search', () => {
@@ -91,6 +106,26 @@ describe('keyword search', () => {
     }
   });
 
+
+  /**
+   * Prefix matching only runs one way, so typing more than the page says used
+   * to find nothing: a bookmark summarised "Listing of open roles" was invisible
+   * to "listings". Found against a real vault, not a fixture.
+   */
+  it('finds a singular when a plural is typed, and the other way round', async () => {
+    const { cookie, user } = await signUp(app);
+
+    await seed(user.id, { title: 'Stripe Careers', summary: 'Listing of open roles.' });
+    await seed(user.id, { title: 'Redis Caches', summary: 'How the cache is filled.' });
+
+    for (const q of ['listing', 'listings']) {
+      assert.deepEqual(titles((await list(cookie, `?q=${q}`)).body), ['Stripe Careers'], q);
+    }
+
+    for (const q of ['cache', 'caches', 'caching']) {
+      assert.deepEqual(titles((await list(cookie, `?q=${q}`)).body), ['Redis Caches'], q);
+    }
+  });
   /**
    * The other half of the same defect: `$text` ORs its terms, so adding a word
    * made the result set larger. This is the "search does not filter" complaint.

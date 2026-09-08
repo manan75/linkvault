@@ -148,11 +148,71 @@ export function queryTerms(q) {
 }
 
 /**
+ * Suffixes stripped from a *query* term, longest first.
+ *
+ * Prefix matching is one-directional: a document token has to begin with what
+ * was typed. That covers the common case of typing less than the page says
+ * ("listing" finds "Listings"), and misses the opposite one entirely. Measured
+ * against a real bookmark whose summary read "Listing of open roles":
+ *
+ * ```
+ * "listing"  -> 1 hit
+ * "listings" -> 0 hits
+ * ```
+ *
+ * Typing a plural when the page used a singular is not an unusual thing to do,
+ * and an empty result there reads exactly like the bug this file was written to
+ * fix. So the *query* is reduced to its stem, and the stem is what gets matched
+ * as a prefix -- which needs no second clause, because a stem is a prefix of
+ * the word it came from: "^listing" matches the token "listing" and the token
+ * "listings" both.
+ *
+ * Deliberately not a stemmer, and deliberately query-side only. The document
+ * side stays literal, so what is stored remains exactly what was written, and
+ * the transformation is applied in one place to one short string rather than
+ * invisibly to both sides of the comparison -- which is what made `$text`
+ * unpredictable.
+ */
+const INFLECTIONAL_SUFFIXES = ['ies', 'ing', 'ers', 'es', 'ed', 'er', 's'];
+
+/**
+ * The shortest stem worth matching on.
+ *
+ * A floor is the whole safety of the rule above, because stripping widens: with
+ * no bound, "cars" becomes "car" and finds "careers", and "tags" becomes "tag"
+ * and finds "target". Four characters keeps the genuine inflections
+ * ("listings", "caching", "libraries", "watches") and rejects the short words
+ * where the stem carries too little meaning to be worth the noise.
+ */
+const MIN_STEM_LENGTH = 4;
+
+/**
+ * The prefix a query term is actually matched by.
+ *
+ * The most aggressive stem that clears the floor, because stems nest: "librar"
+ * matches everything "librari" would and "library" as well. One literal
+ * anchored prefix, so this still costs a single index seek -- an alternation of
+ * several stems would not.
+ */
+export function matchPrefix(term) {
+  let prefix = term;
+
+  for (const suffix of INFLECTIONAL_SUFFIXES) {
+    if (!term.endsWith(suffix)) continue;
+
+    const stem = term.slice(0, -suffix.length);
+    if (stem.length >= MIN_STEM_LENGTH && stem.length < prefix.length) prefix = stem;
+  }
+
+  return prefix;
+}
+
+/**
  * A Mongo clause matching documents whose tokens begin with `term`.
  *
  * Anchored, so the multikey index on `searchTokens` can serve it. An unanchored
  * regex would work and would also read every key in the index.
  */
 export function prefixClause(term) {
-  return { searchTokens: { $regex: `^${escapeRegex(term)}` } };
+  return { searchTokens: { $regex: `^${escapeRegex(matchPrefix(term))}` } };
 }

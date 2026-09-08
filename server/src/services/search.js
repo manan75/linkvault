@@ -2,7 +2,7 @@ import { env } from '../config/env.js';
 import { Link } from '../models/Link.js';
 import { embedQuery as callProvider } from './embedding.js';
 import { buildLinkQuery, queryTerms, withKeyword } from './linkQuery.js';
-import { tokenize } from './searchTokens.js';
+import { matchPrefix, tokenize } from './searchTokens.js';
 import { nearestLinks } from './vectorSearch.js';
 
 /**
@@ -132,13 +132,22 @@ export function scoreKeyword(link, terms, { query = '' } = {}) {
   let score = 0;
 
   for (const term of terms) {
+    // The same reduction the Mongo clause matches by -- see `matchPrefix`. The
+    // two have to agree: if the filter matched a term the scorer did not, the
+    // link would score zero against the very word that found it and sink to the
+    // bottom of its own result list.
+    const prefix = matchPrefix(term);
     let best = 0;
 
     for (const [field, tokens] of Object.entries(fields)) {
       for (const token of tokens) {
-        if (!token.startsWith(term)) continue;
+        if (!token.startsWith(prefix)) continue;
 
-        const quality = token === term ? EXACT_MATCH : PREFIX_MATCH;
+        // Both forms count as whole words. Typing "listings" against a page
+        // that says "listings" is an exact match, and so is typing it against
+        // one that says "listing" -- neither is the half-typed word that
+        // `PREFIX_MATCH` exists to rank below a finished one.
+        const quality = token === term || token === prefix ? EXACT_MATCH : PREFIX_MATCH;
         best = Math.max(best, FIELD_WEIGHTS[field] * quality);
       }
     }
