@@ -23,7 +23,27 @@ Read in this order when picking the project back up.
 | [2026-09-03-deploy-v1-live.md](./2026-09-03-deploy-v1-live.md) | Deploy v1 is live: what the dashboards actually needed, the sites that block a datacenter IP, the URL-derived title fallback, and the fix list and extension path for next time |
 | [2026-09-04-extension.md](./2026-09-04-extension.md) | The title and tagging fixes, bearer tokens, page capture ahead of Phase 6 and its Important Rule argument, and the Chrome Web Store deployment checklist |
 | [2026-09-04-next-steps.md](./2026-09-04-next-steps.md) | oEmbed, gzip and the deep health check; why "search is bad" is two problems living in different places; and the extension / v1-fixes / Phase 6 decision to be talked through |
-| [2026-09-06-phase-6-search.md](./2026-09-06-phase-6-search.md) | Phase 6: the three defects in `$text` and what replaced it, the embedding-runtime decision and its Important Rule argument, hybrid ranking, and what is measured versus what is still a guess. **Start here for the next session.** |
+| [2026-09-06-phase-6-search.md](./2026-09-06-phase-6-search.md) | Phase 6: the three defects in `$text` and what replaced it, the embedding-runtime decision and its Important Rule argument, hybrid ranking, and what is measured versus what is still a guess. |
+| [2026-09-13-mvp-filters.md](./2026-09-13-mvp-filters.md) | The domain and date filters reaching the UI: why the domain filter has no list of domains, the local-day/instant conversion, and the browser check that has not happened. **Start here for the next session.** |
+
+---
+
+## State of play (as of 2026-09-13)
+
+**The MVP filter surface is complete.** Filtering by domain and by save date were listed under
+MVP in `CLAUDE.md`, built and tested on the server since Phase 2, and unreachable from the
+browser until now. No server code changed -- the gap really was only `EMPTY_FILTERS` and
+`FilterBar`.
+
+Two decisions worth knowing: the domain filter is turned on by **clicking the domain on a link**
+rather than from a list of every domain in the vault (a domain list is long, uncurated and not
+how anyone thinks about their library -- the reasoning is in section 1 of the note), and the date
+chip's label is derived from the boundaries rather than from the preset that set them, so it
+cannot drift.
+
+**Nothing here has been looked at in a browser.** Docker was not running, so there was no local
+Mongo behind a dashboard. The build passes, the boundary arithmetic is verified in Node, and the
+layout has not been seen. That check is the first thing to do next session.
 
 ---
 
