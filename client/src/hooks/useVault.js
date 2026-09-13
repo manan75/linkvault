@@ -9,6 +9,11 @@ export const EMPTY_FILTERS = {
   q: '',
   tag: [],
   collectionId: null,
+  domain: null,
+  // ISO instants, not calendar days: the API filters on `savedAt`, and the
+  // control that writes these is what turns a picked day into a boundary.
+  savedAfter: null,
+  savedBefore: null,
   isFavorite: undefined,
   isRead: undefined,
 };
@@ -120,6 +125,12 @@ export function useVault() {
   const clearFilters = useCallback(() => {
     setSearchInput('');
     setFilters(EMPTY_FILTERS);
+  }, []);
+
+  // Reached by clicking the domain on a link rather than from a list of every
+  // domain in the vault, so clicking the active one again is the way back out.
+  const toggleDomain = useCallback((domain) => {
+    setFilters((current) => ({ ...current, domain: current.domain === domain ? null : domain }));
   }, []);
 
   const toggleTag = useCallback((name) => {
@@ -254,6 +265,9 @@ export function useVault() {
       Boolean(filters.q) ||
       filters.tag.length > 0 ||
       filters.collectionId !== null ||
+      filters.domain !== null ||
+      filters.savedAfter !== null ||
+      filters.savedBefore !== null ||
       filters.isFavorite !== undefined ||
       filters.isRead !== undefined,
     [filters],
@@ -266,6 +280,7 @@ export function useVault() {
     updateFilters,
     clearFilters,
     toggleTag,
+    toggleDomain,
     hasActiveFilters,
 
     links,

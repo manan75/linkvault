@@ -110,7 +110,15 @@ function ProcessingNote({ link, onRetry }) {
   return null;
 }
 
-export function LinkCard({ link, collections, onUpdate, onDelete, onRetry, onTagClick }) {
+export function LinkCard({
+  link,
+  collections,
+  onUpdate,
+  onDelete,
+  onRetry,
+  onTagClick,
+  onDomainClick,
+}) {
   const [isEditing, setIsEditing] = useState(false);
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
   const [error, setError] = useState(null);
@@ -179,7 +187,20 @@ export function LinkCard({ link, collections, onUpdate, onDelete, onRetry, onTag
               </h3>
 
               <p className="mt-1 truncate text-xs text-ink-faint">
-                {link.domain}
+                {/*
+                  The meta line is also where the domain filter is turned on.
+                  Filtering to a site is something you want while looking at a
+                  link from it, and putting it here means the filter bar does
+                  not have to carry a list of every domain in the vault.
+                */}
+                <button
+                  type="button"
+                  onClick={() => onDomainClick(link.domain)}
+                  title={`Filter by ${link.domain}`}
+                  className="underline-offset-2 hover:text-ink hover:underline"
+                >
+                  {link.domain}
+                </button>
                 {link.author ? ` · ${link.author}` : ''}
                 {` · ${dateFormat.format(new Date(link.savedAt))}`}
                 {collection ? ` · ${collection.name}` : ''}

@@ -146,6 +146,7 @@ export function DashboardPage() {
                   onDelete={vault.deleteLink}
                   onRetry={vault.retryLink}
                   onTagClick={vault.toggleTag}
+                  onDomainClick={vault.toggleDomain}
                 />
               ))}
             </ul>
