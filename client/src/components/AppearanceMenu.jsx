@@ -1,6 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
-
 import { ACCENTS, THEMES } from '../lib/preferences';
+import { useDismissablePanel } from '../hooks/useDismissablePanel';
 import { usePreferences } from '../hooks/usePreferences';
 
 const THEME_LABELS = { system: 'System', light: 'Light', dark: 'Dark' };
@@ -26,32 +25,13 @@ function ThemeIcon({ resolvedTheme }) {
 
 export function AppearanceMenu() {
   const { theme, accent, resolvedTheme, setTheme, setAccent } = usePreferences();
-  const [isOpen, setIsOpen] = useState(false);
-  const containerRef = useRef(null);
-
-  useEffect(() => {
-    if (!isOpen) return undefined;
-
-    const onPointerDown = (event) => {
-      if (!containerRef.current?.contains(event.target)) setIsOpen(false);
-    };
-    const onKeyDown = (event) => {
-      if (event.key === 'Escape') setIsOpen(false);
-    };
-
-    document.addEventListener('pointerdown', onPointerDown);
-    document.addEventListener('keydown', onKeyDown);
-    return () => {
-      document.removeEventListener('pointerdown', onPointerDown);
-      document.removeEventListener('keydown', onKeyDown);
-    };
-  }, [isOpen]);
+  const { ref, isOpen, toggle } = useDismissablePanel();
 
   return (
-    <div ref={containerRef} className="relative">
+    <div ref={ref} className="relative">
       <button
         type="button"
-        onClick={() => setIsOpen((open) => !open)}
+        onClick={toggle}
         aria-expanded={isOpen}
         aria-haspopup="dialog"
         aria-label="Appearance"
