@@ -24,7 +24,28 @@ Read in this order when picking the project back up.
 | [2026-09-04-extension.md](./2026-09-04-extension.md) | The title and tagging fixes, bearer tokens, page capture ahead of Phase 6 and its Important Rule argument, and the Chrome Web Store deployment checklist |
 | [2026-09-04-next-steps.md](./2026-09-04-next-steps.md) | oEmbed, gzip and the deep health check; why "search is bad" is two problems living in different places; and the extension / v1-fixes / Phase 6 decision to be talked through |
 | [2026-09-06-phase-6-search.md](./2026-09-06-phase-6-search.md) | Phase 6: the three defects in `$text` and what replaced it, the embedding-runtime decision and its Important Rule argument, hybrid ranking, and what is measured versus what is still a guess. |
-| [2026-09-13-mvp-filters.md](./2026-09-13-mvp-filters.md) | The domain and date filters reaching the UI: why the domain filter has no list of domains, the local-day/instant conversion, and the browser check that has not happened. **Start here for the next session.** |
+| [2026-09-13-mvp-filters.md](./2026-09-13-mvp-filters.md) | The domain and date filters reaching the UI: why the domain filter has no list of domains, the local-day/instant conversion, and the browser check that has not happened. |
+| [2026-09-14-privacy-policy.md](./2026-09-14-privacy-policy.md) | The privacy policy page and why it is written from the code, the three disclosures reading the code turned up, and the ordered Chrome Web Store submission checklist. **Start here for the next session.** |
+
+---
+
+## State of play (as of 2026-09-14)
+
+**The extension is ready to submit and blocked only on paperwork.** `extension/` has been
+complete since 2026-09-04; what was missing was the privacy policy the Chrome Web Store requires
+as a public URL. That now exists at `/privacy`, routed outside both auth gates so a reviewer can
+read it signed out, and linked from the auth layout and the extension's options page.
+
+It was written by reading the code, which surfaced three disclosures worth knowing independently
+of the store: **every search query reaches OpenAI** (`embedQuery` must put it in the same vector
+space as the documents), enrichment and embedding send *different* fields, and the oEmbed
+providers learn that a URL was looked up. None of that is new behaviour; it had just never been
+stated.
+
+**Two things block submission**, both in the 2026-09-14 note, section 4: `CONTACT_EMAIL` in
+`PrivacyPage.jsx` is deliberately empty and must be set, and capture has still never been verified
+against the real blocked domains in production -- carried forward since 2026-09-04, half an hour of
+work, and the entire argument for the feature.
 
 ---
 
