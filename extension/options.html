@@ -28,6 +28,17 @@
       </form>
 
       <p class="status" id="status" role="status"></p>
+
+      <!--
+        Absolute, and to the deployed app rather than a relative path: this page
+        is served from chrome-extension://, where a relative link resolves
+        inside the extension and 404s. Store review looks for it here.
+      -->
+      <p class="hint">
+        <a href="https://linkvault-livid-two.vercel.app/privacy" target="_blank" rel="noreferrer">
+          Privacy policy
+        </a>
+      </p>
     </main>
 
     <script type="module" src="src/options.js"></script>

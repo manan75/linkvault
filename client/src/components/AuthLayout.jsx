@@ -1,3 +1,5 @@
+import { Link } from 'react-router-dom';
+
 export function AuthLayout({ title, subtitle, children, footer }) {
   return (
     <div className="flex min-h-screen items-center justify-center px-4 py-12">
@@ -14,6 +16,16 @@ export function AuthLayout({ title, subtitle, children, footer }) {
         </div>
 
         {footer ? <div className="mt-6 text-center text-sm text-ink-muted">{footer}</div> : null}
+
+        {/*
+          The only route into the policy that does not need an account, which is
+          what a Chrome Web Store reviewer has.
+        */}
+        <p className="mt-6 text-center text-xs text-ink-faint">
+          <Link to="/privacy" className="underline underline-offset-4">
+            Privacy
+          </Link>
+        </p>
       </div>
     </div>
   );
