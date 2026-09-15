@@ -26,7 +26,7 @@ Read in this order when picking the project back up.
 | [2026-09-06-phase-6-search.md](./2026-09-06-phase-6-search.md) | Phase 6: the three defects in `$text` and what replaced it, the embedding-runtime decision and its Important Rule argument, hybrid ranking, and what is measured versus what is still a guess. |
 | [2026-09-13-mvp-filters.md](./2026-09-13-mvp-filters.md) | The domain and date filters reaching the UI: why the domain filter has no list of domains, the local-day/instant conversion, and the browser check that has not happened. |
 | [2026-09-14-privacy-policy.md](./2026-09-14-privacy-policy.md) | The privacy policy page and why it is written from the code, the three disclosures reading the code turned up, and the ordered Chrome Web Store submission checklist. |
-| [2026-09-15-ready-for-users.md](./2026-09-15-ready-for-users.md) | Session A: the landing page and the cold-start bug in its first version, the in-app feedback path, and the owner's checklist for the keep-warm ping. **Start here for the next session.** |
+| [2026-09-15-ready-for-users.md](./2026-09-15-ready-for-users.md) | Session A: the landing page and the cold-start bug in its first version, the in-app feedback path, the keep-warm ping, and the brief for Session B. **Start here for the next session — section 7 is the brief.** |
 
 ---
 
@@ -51,7 +51,14 @@ not rediscovering, both in the 2026-09-15 note, section 5 -- chiefly that a **fa
 every morning is expected**, because the first ping after the quiet window is answered by Render's
 cold-start holding page rather than by the endpoint.
 
-The extension is deferred on purpose -- the $5 fee is not being spent now.
+All of it is **deployed and verified live** (`7ead6f5..f51d5fe`). Two small things are open: the
+cron job omits hour 23, and nothing has been looked at in a browser for three sessions running --
+which is now a thirty-second check against production rather than a Docker problem.
+
+**Next session is Session B: tune `MIN_SIMILARITY` and `SEMANTIC_WEIGHT` against a real vault.**
+They have been guesses since Phase 6, they are what early users will judge the product on, and
+section 7 of the 2026-09-15 note is the brief. The extension stays deferred on purpose -- the $5 fee
+is not being spent now.
 
 ---
 

@@ -102,12 +102,27 @@ the server does.
 - Every new and changed module transforms through Vite without error, and the contact address is
   present in the production bundle.
 - Feedback ownership, the spoofing refusal, both validation bounds, the 401, and the rate limit.
+- **The deploy itself, against production.** `POST /api/feedback` answers
+  `401 {"error":{"message":"Authentication required"}}` — before the deploy that path was a 404, so
+  the status is a clean yes/no on whether the new server code is live. The Vercel bundle was checked
+  by **content**: it contains the landing hero, the search demo, `linkvault.hasSession`, the
+  feedback prompt and the contact address, and `VITE_API_BASE` is baked in correctly.
+
+  The first attempt at that check compared the deployed bundle's **hash** against a local build, and
+  that was the wrong probe. Vercel sets `VITE_API_BASE`, which is inlined at build time, so the same
+  source produces different bytes and therefore a different content hash there than here. A hash
+  match would have proved it; a mismatch proves nothing. Grep the deployed bundle for strings only
+  the new code contains.
 
 **Not verified — and this is the third consecutive note carrying it:** *none of this has been seen
 in a browser.* Docker was not running, so there was no local Mongo for a dashboard, and no browser
-tooling was available this session. The landing page renders without a backend by design, so it is
-the one thing that can be checked with nothing but `npm run dev` — **that is the first thing to do
-next session**, along with the feedback popover once Mongo is up.
+tooling was available this session.
+
+**It is now much cheaper than the previous two notes made it.** Everything is deployed, so the check
+no longer needs Docker, a dev server, or a local database — a private window on
+`https://linkvault-livid-two.vercel.app/` shows the landing page exactly as a stranger gets it, and
+signing in shows the feedback popover against the real API. Fifteen seconds, no setup. **Do it
+first next session.**
 
 ## 5. What the owner has to do
 
@@ -134,10 +149,15 @@ Code cannot do these.
    06:10 succeeds. Turn failure notifications off for this job or learn to ignore that one. The
    original schedule omitted hour 23, which would have produced a second such failure at 00:00 and
    left 23:00–23:59 unpinged; `6-23` is deliberate.
-2. **Deploy.** Vercel picks up the client from `main`; Render picks up the server. No new
-   environment variables — nothing added this session reads one.
-3. **Check it in a browser**, per section 4.
-4. **Watch the `feedbacks` collection in Atlas.** Newest first; the email is on the document.
+2. ~~**Deploy.**~~ **Done this session.** `7ead6f5..f51d5fe` pushed to `main`; Vercel and Render
+   both build from it and both were verified live, per section 4. No new environment variables —
+   nothing added this session reads one.
+3. **Correct the cron hours to `0-1,6-23`.** **Still open.** The job was created as
+   `*/10 0-1,6-22 * * *`, which omits hour 23: the service sleeps around 23:15, 23:00–23:59 is
+   unpinged at what is a perfectly ordinary hour to be reading, and the 00:00 ping then hits a cold
+   instance and fails the same way the first test run did. One character.
+4. **Check it in a browser**, per section 4.
+5. **Watch the `feedbacks` collection in Atlas.** Newest first; the email is on the document.
 
 Nothing here needs money.
 
@@ -151,8 +171,9 @@ Unchanged from the [privacy policy note](./2026-09-14-privacy-policy.md) except 
   a few searches whose right answer is known.
 - **The extension is still not submitted.** **Deferred deliberately**, not blocked: the $5 fee is
   not being spent now. The engineering has been done since 2026-09-04 and the privacy URL exists.
-- ~~The cron ping on `/api/health` is still not set up.~~ **Still not set up, but section 5 now has
-  the exact URL, interval and window.** Eighth session.
+- ~~The cron ping on `/api/health` is still not set up.~~ **Closed** after eight sessions. Running
+  on cron-job.org. One correction outstanding — see section 5, item 3 — and one failed run every
+  morning at 06:00 is expected rather than a fault.
 - ~~`CONTACT_EMAIL` is empty.~~ **Closed.**
 - **Capture has still never been verified against the real blocked domains in production.** Carried
   since 2026-09-04. Half an hour, and it is the entire argument for the extension.
@@ -169,3 +190,69 @@ Unchanged from the [privacy policy note](./2026-09-14-privacy-policy.md) except 
   is the loud failures only. Pairs naturally with the similarity tuning above, since that needs
   query logging anyway — and both need a decision about storing query text, which the privacy page
   currently says is not stored.
+
+---
+
+## 7. Next session — the brief
+
+**Session A is done and deployed.** The product now has a front door: a stranger who opens the link
+is told what it is, a signed-in user can say what is wrong without leaving the page, and the
+instance is awake when they arrive. Nothing about that was a phase on the list, and it was the whole
+of what stood between the code and a person.
+
+### Do these three first, in order. They cost minutes.
+
+1. **Fix the cron hours** — section 5, item 3. One character.
+2. **Open the site in a private window.** Section 4 says why this is finally cheap. Three sessions
+   have now carried "not seen in a browser"; it is no longer a Docker problem, it is a thirty-second
+   problem.
+3. **Save five links you actually care about**, from the real deployed app, and let them enrich.
+   This is setup for the main work, not a detour — the tuning below is meaningless against a corpus
+   nobody cares about.
+
+### Then: Session B — make semantic search earn its place
+
+**This is the highest-value work remaining, and it is the thing early users will judge.**
+`MIN_SIMILARITY = 0.3` and `SEMANTIC_WEIGHT = 0.8` in `services/search.js` have been guesses since
+the day they were written, and the [Phase 6 note](./2026-09-06-phase-6-search.md) §5 has said so
+twice. Every session since has shipped around them.
+
+The method has not changed and does not need inventing:
+
+- Build a vault of 30–40 real links. Write down **ten queries whose right answer you already know**,
+  weighted toward the ones the product exists for — the paraphrase, the half-memory, the "that
+  thing about making APIs faster" shape. Include two or three queries that *should* return nothing,
+  because a floor that never rejects anything is not a floor.
+- **Log the similarity scores** of each search's candidates next to the known right answer. That one
+  number is the whole experiment: too low and strangers appear, too high and the paraphrase the
+  feature exists for is lost.
+- Move `MIN_SIMILARITY` on the evidence, then `SEMANTIC_WEIGHT`, one at a time. Record the before
+  and after the way §1 and §2 of the Phase 6 note recorded the keyword numbers — measured, in the
+  note, not an impression.
+
+**The thing to decide before writing any of it:** that logging means recording query text, and the
+privacy page currently states searches are not stored. Either the logging is a local, temporary
+instrument that never ships, or the page changes. It does not get to be neither — §2 of the
+[privacy note](./2026-09-14-privacy-policy.md) is explicit that a policy which drifts from the code
+is a public false statement about someone's data.
+
+### After that, in rough order of value
+
+- **Analytics** — see the last bullet of section 6. Users are arriving and nothing records whether
+  search worked for them. Shares the query-logging decision above, which is why the two belong
+  together.
+- **Search result highlighting.** Carried since Phase 6, less pressing under prefix-AND matching
+  than it was under stemmed OR, but still the clearest way to show *why* a result matched.
+- **Verify capture against the real blocked domains** — carried since 2026-09-04, half an hour, and
+  it is the entire argument for the extension whenever the $5 gets spent.
+- **`MAX_LINKS_PER_USER = 100`** is the first wall an enthusiastic early user hits. Worth raising
+  before inviting anyone to move a real library in, not after.
+
+### What not to do
+
+**Do not start Phase 7's Redis.** The seam in `rateLimit/index.js` exists and fails loudly if
+enabled, which is correct and finished. One process, no search cache, and no measurement saying
+either is a problem — `CLAUDE.md` is explicit that Redis arrives when it has a purpose. The same
+goes for Atlas `$vectorSearch`: the Phase 6 note records why a brute-force scan is right at this
+size, and the thing that changes that answer is memory at ~10,000 links, which is two orders of
+magnitude away.
