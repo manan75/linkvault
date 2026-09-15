@@ -22,17 +22,17 @@ import { AppearanceMenu } from '../components/AppearanceMenu';
  */
 
 /** Bumped whenever the substance changes, not when the wording is tidied. */
-const LAST_UPDATED = '14 September 2026';
+const LAST_UPDATED = '15 September 2026';
 
 /**
  * Where a reader asks a question or requests deletion.
  *
- * The store requires a working contact, and publishing a personal address is
- * the owner's decision rather than a default -- so this is deliberately a
- * placeholder, and the page says plainly that it is one instead of quietly
- * rendering a dead link.
+ * A plus-alias rather than the bare address: it reaches the same inbox, but
+ * everything arriving through this published page can be filtered on, and if
+ * the address ever turns up in a list somewhere it is obvious where it leaked
+ * from.
  */
-const CONTACT_EMAIL = '';
+const CONTACT_EMAIL = 'manankapkar000+linkvault@gmail.com';
 
 function Section({ title, children }) {
   return (
@@ -137,6 +137,12 @@ export function PrivacyPage() {
             The service also keeps a per-day count of how many links each account has processed, to
             enforce its own spending limits, and short-lived request counters used for rate limiting.
             Neither records what you saved or searched for.
+          </p>
+          <p>
+            If you send feedback through the button in the app, the service stores the message you
+            wrote, your email address so it can be answered, and the page you were on when you sent
+            it. Nothing else about that visit is recorded. It is kept until you ask for it to be
+            deleted.
           </p>
         </Section>
 
