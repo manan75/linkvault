@@ -25,7 +25,29 @@ Read in this order when picking the project back up.
 | [2026-09-04-next-steps.md](./2026-09-04-next-steps.md) | oEmbed, gzip and the deep health check; why "search is bad" is two problems living in different places; and the extension / v1-fixes / Phase 6 decision to be talked through |
 | [2026-09-06-phase-6-search.md](./2026-09-06-phase-6-search.md) | Phase 6: the three defects in `$text` and what replaced it, the embedding-runtime decision and its Important Rule argument, hybrid ranking, and what is measured versus what is still a guess. |
 | [2026-09-13-mvp-filters.md](./2026-09-13-mvp-filters.md) | The domain and date filters reaching the UI: why the domain filter has no list of domains, the local-day/instant conversion, and the browser check that has not happened. |
-| [2026-09-14-privacy-policy.md](./2026-09-14-privacy-policy.md) | The privacy policy page and why it is written from the code, the three disclosures reading the code turned up, and the ordered Chrome Web Store submission checklist. **Start here for the next session.** |
+| [2026-09-14-privacy-policy.md](./2026-09-14-privacy-policy.md) | The privacy policy page and why it is written from the code, the three disclosures reading the code turned up, and the ordered Chrome Web Store submission checklist. |
+| [2026-09-15-ready-for-users.md](./2026-09-15-ready-for-users.md) | Session A: the landing page and the cold-start bug in its first version, the in-app feedback path, and the owner's checklist for the keep-warm ping. **Start here for the next session.** |
+
+---
+
+## State of play (as of 2026-09-15)
+
+**Phase 6 is done and the phase list is no longer the blocker.** Hybrid search is live, Redis is
+deliberately absent, and by phase number the project is through Phase 8 apart from hardening. What
+was missing was anything built for a stranger.
+
+Three things shipped toward that: **a landing page at `/`** (which was behind `ProtectedRoute`, so
+signed-out visitors got a bare login form), **an in-app feedback box** writing to a `feedbacks`
+collection you read in Atlas, and **a working contact address** on the privacy page.
+
+The detail worth remembering: the landing page's first version waited on the session check, which
+waits on an API measured at **23 seconds cold** -- so it would have made the first impression worse.
+`lib/session.js` records a non-credential hint that this browser once held a session, letting a
+first-time visitor get the page immediately.
+
+**One owner task blocks the rest of the value: the keep-warm ping.** Exact URL, interval and window
+are in the 2026-09-15 note, section 5. The extension is deferred on purpose -- the $5 fee is not
+being spent now.
 
 ---
 
