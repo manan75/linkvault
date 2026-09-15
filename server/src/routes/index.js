@@ -2,6 +2,7 @@ import { Router } from 'express';
 
 import { authRouter } from './authRoutes.js';
 import { collectionRouter } from './collectionRoutes.js';
+import { feedbackRouter } from './feedbackRoutes.js';
 import { healthRouter } from './healthRoutes.js';
 import { linkRouter } from './linkRoutes.js';
 
@@ -11,3 +12,4 @@ apiRouter.use('/health', healthRouter);
 apiRouter.use('/auth', authRouter);
 apiRouter.use('/links', linkRouter);
 apiRouter.use('/collections', collectionRouter);
+apiRouter.use('/feedback', feedbackRouter);
