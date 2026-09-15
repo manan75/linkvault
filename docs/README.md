@@ -45,9 +45,13 @@ waits on an API measured at **23 seconds cold** -- so it would have made the fir
 `lib/session.js` records a non-credential hint that this browser once held a session, letting a
 first-time visitor get the page immediately.
 
-**One owner task blocks the rest of the value: the keep-warm ping.** Exact URL, interval and window
-are in the 2026-09-15 note, section 5. The extension is deferred on purpose -- the $5 fee is not
-being spent now.
+**The keep-warm ping is finally running**, eighth session after it was first written down:
+`*/10 0-1,6-23 * * *` on cron-job.org against `/api/health`. Setting it up taught two things worth
+not rediscovering, both in the 2026-09-15 note, section 5 -- chiefly that a **failed run at 06:00
+every morning is expected**, because the first ping after the quiet window is answered by Render's
+cold-start holding page rather than by the endpoint.
+
+The extension is deferred on purpose -- the $5 fee is not being spent now.
 
 ---
 

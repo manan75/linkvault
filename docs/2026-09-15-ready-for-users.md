@@ -113,11 +113,27 @@ next session**, along with the feedback popover once Mongo is up.
 
 Code cannot do these.
 
-1. **Set up the keep-warm ping.** [cron-job.org](https://cron-job.org), free, no card.
-   URL `https://linkvault-api-uenh.onrender.com/api/health` — the shallow one, **never**
-   `/health/deep`, which hits the database on every run. Every 10 minutes, restricted to
-   06:00–02:00 IST. GitHub Actions was considered and rejected: it delays scheduled workflows under
-   load, sometimes past the 15-minute idle window that causes the spin-down it is meant to prevent.
+1. ~~**Set up the keep-warm ping.**~~ **Done this session.** [cron-job.org](https://cron-job.org),
+   free, no card. URL `https://linkvault-api-uenh.onrender.com/api/health` — the shallow one,
+   **never** `/health/deep`, which hits the database on every run. Schedule
+   `*/10 0-1,6-23 * * *` in `Asia/Kolkata`. GitHub Actions was considered and rejected: it delays
+   scheduled workflows under load, sometimes past the 15-minute idle window that causes the
+   spin-down it is meant to prevent.
+
+   **Two things learned setting it up, both worth keeping.**
+
+   The first test run failed with *"output too large"*, which is a confusing way for the platform
+   to report a cold start. `/api/health` returns 15 bytes warm — measured, with headers — so that
+   error cannot have come from the endpoint. While Render wakes, the request is answered by an HTML
+   holding page instead, and it is that page which exceeds the limit. Waking the service by loading
+   the site first made the same test pass.
+
+   Which means **one failure notification every morning at 06:00 is expected and correct**. After
+   the 02:00–06:00 quiet window the instance is asleep, so the first ping of the day gets the
+   holding page and is recorded as failed — while still doing its job of waking the service, so
+   06:10 succeeds. Turn failure notifications off for this job or learn to ignore that one. The
+   original schedule omitted hour 23, which would have produced a second such failure at 00:00 and
+   left 23:00–23:59 unpinged; `6-23` is deliberate.
 2. **Deploy.** Vercel picks up the client from `main`; Render picks up the server. No new
    environment variables — nothing added this session reads one.
 3. **Check it in a browser**, per section 4.
