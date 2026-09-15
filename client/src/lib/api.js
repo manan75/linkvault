@@ -108,3 +108,7 @@ export const collectionsApi = {
   rename: (id, name) => request(`/collections/${id}`, { method: 'PATCH', body: { name } }),
   remove: (id) => request(`/collections/${id}`, { method: 'DELETE' }),
 };
+
+export const feedbackApi = {
+  send: (message, path) => request('/feedback', { method: 'POST', body: { message, path } }),
+};

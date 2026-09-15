@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 
 import { AppearanceMenu } from '../components/AppearanceMenu';
 import { CollectionSidebar } from '../components/CollectionSidebar';
+import { FeedbackMenu } from '../components/FeedbackMenu';
 import { FilterBar } from '../components/FilterBar';
 import { LinkCard } from '../components/LinkCard';
 import { LinkCardSkeleton } from '../components/LinkCardSkeleton';
@@ -48,6 +49,7 @@ export function DashboardPage() {
           <div className="flex items-center gap-2">
             <span className="hidden px-2 text-sm text-ink-muted sm:inline">{user.email}</span>
             <AppearanceMenu />
+            <FeedbackMenu />
             <Link to="/settings" className="lv-button-quiet">
               Settings
             </Link>
