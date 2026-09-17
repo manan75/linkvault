@@ -173,7 +173,63 @@ Unchanged from the [ready-for-users note](./2026-09-15-ready-for-users.md) excep
 - **New: `+15KB gzipped` of client bundle** now rides on every page load, including the landing page a
   stranger sees cold. Worth a route-level split if the landing page is ever measured as slow.
 
-## 8. Next session
+## 8. A second pass, the same day
+
+Four follow-ups, after the first pass was deployed and looked at.
+
+**Delete left the card.** It now lives in the edit panel behind the pencil, and it *requests* rather
+than performs -- both it and the bin set the same `pendingDelete`, so there is one dialog, one code
+path and one question. The argument for keeping a click route at all: drag-to-bin as the only way to
+delete is fine for whoever discovered dragging, and invisible to a friend on a phone who did not.
+
+**The drag affordance moved to the front of the row and stopped hiding.** A grip on the right at
+`opacity-0` was, in practice, a gesture nobody could see. It is now the first thing in the card, in
+the position a handle is looked for, always on screen, with `cursor: grab` over the card body and a
+line under the Collections heading saying what to drag onto. It costs no width -- it left the cluster
+on the right rather than being added to it.
+
+**Search stopped looking like furniture.** `.lv-search`: 16px text in a 50px box with a magnifier in
+the gutter and a four-pixel accent ring on focus. It is the one control the product exists for and it
+was the same size as the sort dropdown.
+
+**The extension became paste-first.** The popup opens with the cursor in a box; the `paste` event
+*is* the command, with no Save button afterwards, because the second deliberate action is the thing
+being removed. `Ctrl+Shift+L` opens it. Saving the current tab is still there, below a rule.
+
+Three decisions in it worth keeping:
+
+- **`urlFromText` lives in its own module** (`src/url.js`) with no browser dependency, so it can be
+  read and tested directly. Pasted text is rarely only a URL -- it arrives with a trailing newline
+  from a terminal, wrapped in punctuation from a chat message, or inside a sentence. **Nineteen cases
+  pass**, including refusing `javascript:`, `file:` and `chrome://`, which matters because the popup
+  would otherwise POST them.
+- **Rejection happens locally.** A non-link never becomes a request, so the answer is instant instead
+  of costing a cold start to hear.
+- **The box is filled by hand, not by the browser.** Disabling the input in the same tick as the
+  paste can pre-empt the browser's own insertion -- which leaves "Saved." above an empty box, saying
+  that something was saved but not what. Found by looking at a screenshot, not by a failing assertion.
+
+### Verified
+
+**26 browser checks** on the client and **9 on the extension**, the latter driving the real
+`popup.html` and `popup.js` against a real API and asserting the bookmark arrived in the vault. The
+extension harness serves the folder over http with a stub for the three `chrome.*` APIs the popup
+touches; everything else is the extension's own code unmodified.
+
+Two harness traps worth remembering. A second Vite instance holding `[::1]:5174` made a test server
+bound to `0.0.0.0` invisible to `localhost`, which resolves to `::1` first -- every request silently
+reached Vite instead, returning the SPA shell with a 200. And because the harness serves the popup
+over http rather than `chrome-extension://`, the browser applies CORS to a request a real extension
+makes with its own privileges; the check runs its own API with `CLIENT_ORIGIN` pointed at the harness
+rather than working around it in the code under test.
+
+### Not verified
+
+The Chrome-specific half: `chrome.storage.local`, `chrome.tabs.query`, the real clipboard, and
+whether `Ctrl+Shift+L` is free on this machine. All of that needs the extension loaded unpacked --
+which is free, needs no developer registration, and is documented in `extension/README.md`.
+
+## 9. Next session
 
 1. **Deploy this**, and open the production site on an actual phone. The emulation did its job but it
    is not a finger.
