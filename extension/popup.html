@@ -7,12 +7,30 @@
   </head>
   <body class="popup">
     <main id="panel">
-      <p class="page-title" id="page-title"></p>
-      <p class="page-url" id="page-url"></p>
-
-      <button type="button" id="save" class="primary">Save to LinkVault</button>
+      <!--
+        Focused the moment the popup opens, so the whole interaction is: open,
+        Ctrl+V, gone. Nothing above it, nothing to click first.
+      -->
+      <input
+        type="url"
+        id="paste"
+        class="paste"
+        autofocus
+        autocomplete="off"
+        spellcheck="false"
+        placeholder="Paste a link"
+        aria-label="Paste a link to save it"
+      />
 
       <p class="status" id="status" role="status"></p>
+
+      <!-- The original reason this extension existed, now the second option. -->
+      <section class="current" id="current">
+        <p class="section-label">or save the page you are on</p>
+        <p class="page-title" id="page-title"></p>
+        <p class="page-url" id="page-url"></p>
+        <button type="button" id="save" class="quiet">Save this page</button>
+      </section>
     </main>
 
     <footer>

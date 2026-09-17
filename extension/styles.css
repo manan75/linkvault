@@ -65,6 +65,60 @@ h1 {
   font-size: 20px;
 }
 
+/*
+ * The paste box. Larger than an ordinary field because it is the whole point of
+ * the popup, and it is what has focus the moment the panel opens.
+ */
+.paste {
+  padding: 12px;
+  font-size: 15px;
+  border-color: var(--accent);
+  background: var(--bg);
+}
+
+.paste:disabled {
+  opacity: 0.6;
+}
+
+.current {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.current[hidden] {
+  display: none;
+}
+
+.section-label {
+  margin: 0 0 6px;
+  color: var(--ink-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.quiet {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.quiet:hover:not(:disabled) {
+  border-color: var(--ink-muted);
+}
+
+.quiet:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
 .page-title {
   margin: 0 0 2px;
   font-weight: 600;
@@ -127,7 +181,7 @@ input:focus-visible {
 }
 
 .status {
-  margin: 12px 0 0;
+  margin: 8px 0 0;
   min-height: 1.5em;
   font-size: 12px;
   color: var(--ink-muted);

@@ -1,20 +1,29 @@
 import { ApiError, saveLink } from './api.js';
 import { readPage } from './capture.js';
 import { loadSettings } from './config.js';
+import { urlFromText } from './url.js';
 
 /**
- * One button, and the four things it has to get right.
+ * Paste, and it is saved.
  *
  * The product promise is save, forget, describe, find -- and saving from the
  * web app costs four actions: copy the URL, switch tabs, find LinkVault, paste.
  * That friction lands at the exact moment of intent, which is why bookmark
- * tools die. This is meant to be one click and no thought.
+ * tools die.
+ *
+ * So the popup opens with the cursor already in a box and the paste itself is
+ * the command: there is no Save button to find afterwards, because a second
+ * deliberate action is the thing being removed. Saving the current page still
+ * exists underneath, which is what this extension used to be.
  */
 
 const el = (id) => document.getElementById(id);
 
 /** Pages the browser will not let a script into, and there is no point pretending. */
 const UNREACHABLE = /^(chrome|chrome-extension|edge|about|devtools|view-source|file):/i;
+
+/** How long a result stays on screen before the popup gets out of the way. */
+const CLOSE_AFTER_MS = 1100;
 
 function show(message, kind = '') {
   const status = el('status');
@@ -60,23 +69,19 @@ function describe({ created, recaptured, link }) {
   return ['Already saved.', 'ok'];
 }
 
-async function save(tab) {
-  const button = el('save');
-
-  button.disabled = true;
+/** Shared by both routes in; `capture` is only ever present for the current tab. */
+async function send({ url, capture, onFailure }) {
   show('Saving…');
 
   try {
-    const capture = await capturePage(tab);
-    const result = await saveLink({ url: tab.url, capture: capture ?? undefined });
-
+    const result = await saveLink({ url, capture });
     const [message, kind] = describe(result);
     show(message, kind);
 
     // Long enough to read, short enough that saving stays one gesture.
-    setTimeout(() => window.close(), 1200);
+    setTimeout(() => window.close(), CLOSE_AFTER_MS);
   } catch (error) {
-    button.disabled = false;
+    onFailure?.();
 
     if (error instanceof ApiError && error.status === 401) {
       show('Not connected. Open Settings and paste an access token.', 'error');
@@ -87,12 +92,83 @@ async function save(tab) {
   }
 }
 
+/**
+ * Wires the paste box.
+ *
+ * The `paste` event rather than an input listener: it fires once, with the
+ * clipboard's own text, before the field updates -- so a paste saves and a
+ * keystroke does not.
+ *
+ * The address is written into the box by hand rather than left to the browser's
+ * own insertion, because disabling the field in the same tick can pre-empt it --
+ * which would leave "Saved." on screen above an empty box, saying that something
+ * was saved but not what. It is also the cleaned URL rather than the raw
+ * clipboard text, so a link pasted out of a sentence shows what was actually
+ * sent.
+ */
+function wirePaste(input) {
+  const attempt = (text) => {
+    const url = urlFromText(text);
+
+    if (!url) {
+      show('That does not look like a link.', 'warn');
+      return;
+    }
+
+    input.value = url;
+    input.disabled = true;
+
+    send({ url, onFailure: () => {
+      input.disabled = false;
+      input.focus();
+      input.select();
+    } });
+  };
+
+  input.addEventListener('paste', (event) => {
+    attempt(event.clipboardData?.getData('text') ?? '');
+  });
+
+  // Typed, dropped, or pasted with the mouse into a field that then lost the
+  // paste event: Enter is the fallback for every way text arrives that is not
+  // Ctrl+V.
+  input.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    attempt(input.value);
+  });
+
+  input.focus();
+}
+
+/** The secondary route: whatever tab is in front, with its page content. */
+function wireCurrentTab(tab) {
+  const button = el('save');
+
+  if (!tab?.url || UNREACHABLE.test(tab.url)) {
+    // Not an error state any more. Pasting still works on a chrome:// page,
+    // which is more than this extension could previously do at all.
+    el('current').hidden = true;
+    return;
+  }
+
+  el('page-title').textContent = tab.title ?? '';
+  el('page-url').textContent = tab.url.replace(/^https?:\/\//i, '');
+
+  button.addEventListener('click', async () => {
+    button.disabled = true;
+    const capture = await capturePage(tab);
+    await send({
+      url: tab.url,
+      capture: capture ?? undefined,
+      onFailure: () => {
+        button.disabled = false;
+      },
+    });
+  });
+}
+
 async function start() {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-
-  el('page-title').textContent = tab?.title ?? '';
-  el('page-url').textContent = (tab?.url ?? '').replace(/^https?:\/\//i, '');
-
   el('open-options').addEventListener('click', (event) => {
     event.preventDefault();
     chrome.runtime.openOptionsPage();
@@ -101,18 +177,16 @@ async function start() {
   const { token } = await loadSettings();
 
   if (!token) {
+    el('paste').disabled = true;
     el('save').disabled = true;
     show('Open Settings and paste an access token to get started.', 'warn');
     return;
   }
 
-  if (!tab?.url || UNREACHABLE.test(tab.url)) {
-    el('save').disabled = true;
-    show('There is nothing to save on this page.', 'warn');
-    return;
-  }
+  wirePaste(el('paste'));
 
-  el('save').addEventListener('click', () => save(tab));
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  wireCurrentTab(tab);
 }
 
 start();

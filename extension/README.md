@@ -1,8 +1,18 @@
 # LinkVault extension
 
-One click saves the page you are on, and sends what your browser can see with it.
+Open it, press Ctrl+V, and the link is saved. Or save the page you are on, sending what your browser
+can see with it.
 
-That second half is the reason this exists rather than a bookmarklet. `safeFetch` calls from a
+**Paste is the primary path and it is deliberately one gesture.** The popup opens with the cursor
+already in the box and the paste itself is the command -- there is no Save button to find afterwards,
+because a second deliberate action is the thing being removed. Saving from the web app costs four
+actions (copy, switch tabs, find LinkVault, paste) and that friction lands at the exact moment of
+intent, which is why bookmark tools die.
+
+Pasting also works on pages the extension cannot otherwise touch -- `chrome://`, a PDF viewer, a
+local file -- because it never needs to read the tab.
+
+That second half, the capture, is the reason this exists rather than a bookmarklet. `safeFetch` calls from a
 datacenter, and production measured what that costs: YouTube answers **429** and LeetCode **403** to
 the API specifically, whatever it sends, and nothing server-side reaches a page behind a login at
 all. This runs in the tab you are already looking at, from your address and your session, so those
@@ -18,7 +28,8 @@ styles.css         Both pages. Plain CSS, no build step.
 src/capture.js     The only code that runs inside a page. Must stay self-contained.
 src/api.js         Bearer-authenticated calls to the LinkVault API.
 src/config.js      The two settings, in chrome.storage.local.
-src/popup.js       Read the tab, capture, save, say what happened.
+src/popup.js       Focus the box, save what is pasted, say what happened.
+src/url.js         The first http(s) URL in some pasted text. No browser needed to test it.
 src/options.js     Paste a token, then prove it works against /auth/me.
 ```
 
@@ -35,6 +46,16 @@ what a reviewer reads is what Chrome runs.
 
 Pointing it at a local API: set the API address to `http://localhost:4000/api`. That host is already
 in `host_permissions`; anything not listed there is blocked by Chrome with no useful error.
+
+**The keyboard shortcut** is `Ctrl+Shift+L` (`Cmd+Shift+L` on a Mac), which opens the popup with the
+box already focused -- so the whole save is shortcut, Ctrl+V, done. Chrome only *suggests* it: if
+another extension already holds that combination Chrome silently leaves this one unbound, and
+`chrome://extensions/shortcuts` is where it is set or changed.
+
+Loading unpacked is a complete, permanent install for your own browser and needs **no developer
+registration and no fee** -- the $5 is only for publishing to the store so other people can install
+it by link. The folder has to stay where it is, and Chrome will show a "developer mode extensions"
+notice on some startups.
 
 After editing any file, press **Reload** on the extension card. The popup picks up changes on its
 next open; `manifest.json` changes always need the reload.

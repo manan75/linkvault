@@ -2,8 +2,12 @@
   "manifest_version": 3,
   "name": "LinkVault",
   "version": "0.1.0",
-  "description": "Save the page you are on to LinkVault, with what your browser can see and a server cannot.",
-  "permissions": ["activeTab", "scripting", "storage"],
+  "description": "Paste a link and it is saved. Or save the page you are on, with what your browser can see and a server cannot.",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage"
+  ],
   "host_permissions": [
     "https://linkvault-api-uenh.onrender.com/*",
     "http://localhost:4000/*"
@@ -17,5 +21,14 @@
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
+  },
+  "commands": {
+    "_execute_action": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+L",
+        "mac": "Command+Shift+L"
+      },
+      "description": "Open LinkVault to paste a link"
+    }
   }
 }
