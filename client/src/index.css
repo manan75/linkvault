@@ -192,6 +192,18 @@
   }
 
   /*
+    Search is the product, so it does not look like the rest of the furniture.
+    Bigger text, a taller box, a magnifier in the gutter and a focus ring that
+    is hard to miss -- this is the one field a returning user is looking for.
+  */
+  .lv-search {
+    @apply w-full rounded-xl border border-line bg-surface py-3 pl-11 pr-4 text-base text-ink;
+    @apply shadow-sm outline-none transition placeholder:text-ink-faint;
+    @apply hover:border-line-strong;
+    @apply focus:border-accent focus:shadow-md focus:ring-4 focus:ring-accent/15;
+  }
+
+  /*
     Icon-only controls. `p-2` around a `size-4` icon is a 32px target, which is
     fine under a cursor and mean under a thumb -- the coarse-pointer rule below
     lifts it rather than making every desktop row taller.

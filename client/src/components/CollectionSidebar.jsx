@@ -217,6 +217,16 @@ export function CollectionSidebar({
         Collections
       </h2>
 
+      {/*
+        Said once, where the targets are, and only when there is a target to
+        drag onto. An affordance that has to be discovered by accident mostly
+        is not; a grip icon says a row can be picked up but not where it can be
+        put down.
+      */}
+      {collections.length > 0 ? (
+        <p className="mt-1 px-2.5 text-xs text-ink-faint">Drag a link onto one to file it.</p>
+      ) : null}
+
       <ul className="mt-2 space-y-0.5">
         <li>
           <SidebarButton

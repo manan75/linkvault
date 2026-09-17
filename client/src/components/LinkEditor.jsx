@@ -12,7 +12,7 @@ const parseTags = (value) =>
  * Manual editing of the fields a user owns. Everything else on a bookmark --
  * summary, embedding, processing status -- belongs to the pipeline.
  */
-export function LinkEditor({ link, collections, onSave, onCancel }) {
+export function LinkEditor({ link, collections, onSave, onDelete, onCancel }) {
   const [values, setValues] = useState({
     title: link.title,
     description: link.description,
@@ -128,7 +128,7 @@ export function LinkEditor({ link, collections, onSave, onCancel }) {
         </p>
       ) : null}
 
-      <div className="flex gap-2">
+      <div className="flex items-center gap-2">
         <button
           type="submit"
           disabled={isSaving}
@@ -143,6 +143,23 @@ export function LinkEditor({ link, collections, onSave, onCancel }) {
         >
           Cancel
         </button>
+
+        {/*
+          Deleting lives here rather than on the card, so the row stays about
+          the bookmark instead of about what can be done to it. It is the
+          click-driven route to the same thing the bin does by drag -- and it
+          only asks; the dashboard owns the dialog, so both routes ask the same
+          question exactly once.
+        */}
+        {onDelete ? (
+          <button
+            type="button"
+            onClick={onDelete}
+            className="ml-auto rounded-lg px-2 py-1.5 text-sm font-medium text-ink-muted transition hover:bg-danger-soft hover:text-danger-ink"
+          >
+            Delete
+          </button>
+        ) : null}
       </div>
     </form>
   );

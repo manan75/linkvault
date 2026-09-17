@@ -247,14 +247,37 @@ export function FilterBar({
 }) {
   return (
     <div className="space-y-3">
-      <input
-        type="search"
-        value={searchInput}
-        onChange={(event) => onSearchInput(event.target.value)}
-        placeholder="Search your links, or describe one"
-        aria-label="Search your links"
-        className="lv-field w-full"
-      />
+      {/*
+        The one control the product exists for, sized like it. The magnifier is
+        decorative -- the field is already labelled and typing is the only thing
+        to do with it -- so it is inert and hidden from assistive technology
+        rather than being a second way to trigger a search that needs no
+        triggering.
+      */}
+      <div className="relative">
+        <svg
+          viewBox="0 0 24 24"
+          aria-hidden="true"
+          className="pointer-events-none absolute left-4 top-1/2 size-5 -translate-y-1/2 text-ink-faint"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <circle cx="11" cy="11" r="7" />
+          <path d="m20 20-3.5-3.5" />
+        </svg>
+
+        <input
+          type="search"
+          value={searchInput}
+          onChange={(event) => onSearchInput(event.target.value)}
+          placeholder="Search your links, or describe one you half remember"
+          aria-label="Search your links"
+          className="lv-search"
+        />
+      </div>
 
       <SearchNote search={search} query={filters.q} />
 

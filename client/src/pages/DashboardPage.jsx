@@ -287,7 +287,7 @@ export function DashboardPage() {
                     link={link}
                     collections={vault.collections}
                     onUpdate={vault.updateLink}
-                    onDelete={vault.deleteLink}
+                    onRequestDelete={setPendingDelete}
                     onRetry={vault.retryLink}
                     onTagClick={vault.toggleTag}
                     onDomainClick={vault.toggleDomain}
