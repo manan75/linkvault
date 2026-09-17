@@ -163,14 +163,77 @@
     @apply aria-invalid:border-danger;
   }
 
+  /*
+    Buttons answer a press as well as a hover. A rectangle that only changes
+    colour gives no sense that the click landed -- a pixel of travel with the
+    shadow collapsing underneath it does, and costs two declarations.
+
+    `inline-flex` is here because half of these are `<Link>` rather than
+    `<button>`, and an anchor with padding does not centre its own text.
+  */
   .lv-button {
-    @apply rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accent-ink transition;
-    @apply hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2;
+    @apply text-sm font-medium text-accent-ink shadow-sm;
+    @apply transition-[background-color,box-shadow,transform] duration-150;
+    @apply hover:bg-accent-hover hover:shadow-md;
+    @apply active:translate-y-px active:shadow-sm;
+    @apply disabled:cursor-not-allowed disabled:opacity-50;
+    @apply disabled:hover:bg-accent disabled:hover:shadow-sm disabled:active:translate-y-0;
   }
 
   .lv-button-quiet {
-    @apply rounded-lg border border-line bg-surface px-3 py-1.5 text-sm font-medium text-ink transition;
-    @apply hover:bg-surface-muted;
+    @apply inline-flex items-center justify-center gap-2 rounded-lg border border-line bg-surface;
+    @apply px-3 py-1.5 text-sm font-medium text-ink shadow-sm;
+    @apply transition-[background-color,border-color,box-shadow,transform] duration-150;
+    @apply hover:border-line-strong hover:bg-surface-muted hover:shadow-md;
+    @apply active:translate-y-px active:shadow-sm;
+    @apply disabled:cursor-not-allowed disabled:opacity-50;
+    @apply disabled:hover:bg-surface disabled:hover:shadow-sm disabled:active:translate-y-0;
+  }
+
+  /*
+    Icon-only controls. `p-2` around a `size-4` icon is a 32px target, which is
+    fine under a cursor and mean under a thumb -- the coarse-pointer rule below
+    lifts it rather than making every desktop row taller.
+  */
+  .lv-icon-button {
+    @apply inline-flex shrink-0 items-center justify-center rounded-lg p-2;
+    @apply text-ink-muted transition duration-150;
+    @apply hover:bg-surface-muted hover:text-ink active:scale-95;
+  }
+}
+
+/*
+  A finger is not a cursor. WCAG puts the floor at 24px and every guide that has
+  watched someone actually use a phone puts the comfortable size near 44 -- so
+  the controls grow where the pointer is coarse, and only there.
+*/
+@media (pointer: coarse) {
+  .lv-button,
+  .lv-button-quiet {
+    min-height: 2.75rem;
+  }
+
+  .lv-icon-button {
+    min-height: 2.75rem;
+    min-width: 2.75rem;
+  }
+}
+
+/*
+  Controls that reveal on hover have to be present on a device that cannot hover
+  at all. Tailwind compiles `hover:` to `@media (hover: hover)`, so on a phone
+  `group-hover:opacity-100` never fires and the control is not quiet -- it is
+  invisible, and edit and delete simply do not exist.
+
+  Unlayered on purpose: `opacity-0` is a utility, and Tailwind's `utilities`
+  layer outranks `components` whatever the specificity. Styles in no layer at
+  all outrank both.
+*/
+@media (hover: none) {
+  .lv-row-action {
+    opacity: 1;
+    pointer-events: auto;
   }
 }
 

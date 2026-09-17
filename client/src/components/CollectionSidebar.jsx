@@ -1,15 +1,38 @@
+import { useDndContext, useDroppable } from '@dnd-kit/core';
 import { useState } from 'react';
 
 import { UNCATEGORISED } from '../hooks/useVault';
+import { collectionDropId } from '../lib/dnd';
 
-function SidebarButton({ isActive, count, children, ...props }) {
+/**
+ * A row in the sidebar, and -- where `dropId` is given -- somewhere a dragged
+ * bookmark can land.
+ *
+ * "All links" is not a destination, because every link is already in it. It
+ * still calls the hook, disabled: a hook cannot be called conditionally, and
+ * registering a disabled droppable is how dnd-kit is told to ignore one.
+ */
+function SidebarButton({ isActive, count, dropId, className = '', children, ...props }) {
+  const { setNodeRef, isOver } = useDroppable({
+    id: dropId ?? 'lv-sidebar-nodrop',
+    disabled: !dropId,
+  });
+  const { active } = useDndContext();
+
+  // Only a target once there is something to catch. Outlining every row on an
+  // ordinary page load would be noise about a gesture nobody is making.
+  const isTarget = Boolean(dropId && active);
+
   return (
     <button
+      ref={setNodeRef}
       type="button"
       aria-current={isActive ? 'true' : undefined}
-      className={`flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm transition ${
+      className={`flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm transition pointer-coarse:py-2.5 ${
         isActive ? 'bg-accent text-accent-ink' : 'text-ink hover:bg-surface-muted'
-      }`}
+      } ${isTarget ? 'outline-1 outline-dashed outline-offset-2 outline-line-strong' : ''} ${
+        isOver ? 'outline-2 outline-solid outline-accent ring-4 ring-accent/20' : ''
+      } ${className}`}
       {...props}
     >
       <span className="truncate">{children}</span>
@@ -86,21 +109,33 @@ function CollectionRow({ collection, isActive, onSelect, onRename, onDelete }) {
   }
 
   return (
-    <li className="group relative">
+    <li className="group relative flex items-center">
       <SidebarButton
         isActive={isActive}
         count={collection.linkCount}
+        dropId={collectionDropId(collection.id)}
+        className="min-w-0 flex-1"
         onClick={() => onSelect(collection.id)}
       >
         {collection.name}
       </SidebarButton>
 
-      <div className="pointer-events-none absolute inset-y-0 right-1 flex items-center gap-1 opacity-0 transition group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100">
+      {/*
+        `lv-row-action` keeps these reachable where there is no hover to reveal
+        them -- without it a phone can neither rename nor delete a collection.
+        See index.css.
+
+        Where they are always visible they also have to be laid out, rather than
+        floated over the row: absolutely positioned they sit on top of the link
+        count and run off the right edge of a narrow sidebar. On a coarse
+        pointer they rejoin the flow and the row simply gets wider.
+      */}
+      <div className="lv-row-action pointer-events-none absolute inset-y-0 right-1 flex items-center gap-1 opacity-0 transition group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100 pointer-coarse:static pointer-coarse:inset-auto pointer-coarse:shrink-0">
         <button
           type="button"
           onClick={() => setMode('rename')}
           aria-label={`Rename ${collection.name}`}
-          className={`rounded px-1 text-xs ${isActive ? 'text-accent-ink/80 hover:text-accent-ink' : 'text-ink-muted hover:text-ink'}`}
+          className={`rounded px-1.5 py-1 text-xs pointer-coarse:px-2 pointer-coarse:py-1.5 ${isActive ? 'text-accent-ink/80 hover:text-accent-ink' : 'text-ink-muted hover:text-ink'}`}
         >
           Rename
         </button>
@@ -108,7 +143,7 @@ function CollectionRow({ collection, isActive, onSelect, onRename, onDelete }) {
           type="button"
           onClick={() => setMode('confirm-delete')}
           aria-label={`Delete ${collection.name}`}
-          className={`rounded px-1 text-xs ${isActive ? 'text-accent-ink/80 hover:text-accent-ink' : 'text-ink-muted hover:text-danger'}`}
+          className={`rounded px-1.5 py-1 text-xs pointer-coarse:px-2 pointer-coarse:py-1.5 ${isActive ? 'text-accent-ink/80 hover:text-accent-ink' : 'text-ink-muted hover:text-danger'}`}
         >
           Delete
         </button>
@@ -196,6 +231,7 @@ export function CollectionSidebar({
           <SidebarButton
             isActive={activeCollectionId === UNCATEGORISED}
             count={uncategorisedCount}
+            dropId={collectionDropId(null)}
             onClick={() => onSelect(UNCATEGORISED)}
           >
             Uncategorised

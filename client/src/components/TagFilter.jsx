@@ -106,7 +106,8 @@ export function TagFilter({ tags, activeTags, onToggle, onRename }) {
                 A sibling rather than a nested button, which is invalid markup.
                 Hidden until the pill is hovered or the control itself is
                 focused, so the sidebar stays a list of tags rather than a list
-                of controls -- but always reachable by keyboard.
+                of controls -- but always reachable by keyboard, and by
+                `lv-row-action` on a device with no hover to reveal it.
               */}
               {onRename ? (
                 <button
@@ -114,7 +115,7 @@ export function TagFilter({ tags, activeTags, onToggle, onRename }) {
                   aria-label={`Rename the tag ${name}`}
                   title="Rename or merge"
                   onClick={() => startEditing(name)}
-                  className={`absolute inset-y-0 right-0 flex items-center rounded-r-full px-1.5 opacity-0 transition focus-visible:opacity-100 group-hover/tag:opacity-100 ${
+                  className={`lv-row-action absolute inset-y-0 right-0 flex items-center rounded-r-full px-1.5 opacity-0 transition pointer-coarse:px-2.5 focus-visible:opacity-100 group-hover/tag:opacity-100 ${
                     isActive ? 'text-accent-ink' : 'text-ink-faint hover:text-ink'
                   }`}
                 >

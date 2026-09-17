@@ -1,3 +1,4 @@
+import { useDraggable } from '@dnd-kit/core';
 import { useState } from 'react';
 
 import { displayTitle } from '../lib/titleFromUrl';
@@ -11,6 +12,8 @@ const ICONS = {
   trash: 'M6 7h12M10 7V5h4v2m-7 0 1 13h8l1-13',
   check: 'M20 6 9 17l-5-5',
   retry: 'M20 12a8 8 0 1 1-2.3-5.6M20 4v4h-4',
+  // Six dots, drawn as zero-length round-capped segments.
+  grip: 'M9 6h.01M9 12h.01M9 18h.01M15 6h.01M15 12h.01M15 18h.01',
 };
 
 function Icon({ path, filled }) {
@@ -37,8 +40,8 @@ function IconButton({ isOn, label, icon, className = '', ...props }) {
       aria-label={label}
       aria-pressed={isOn}
       title={label}
-      className={`rounded-md p-1.5 transition ${
-        isOn ? 'text-accent-text' : 'text-ink-muted hover:bg-surface-muted hover:text-ink'
+      className={`lv-icon-button ${
+        isOn ? 'text-accent-text hover:text-accent-text' : ''
       } ${className}`}
       {...props}
     >
@@ -65,6 +68,7 @@ function RemoteImage({ src, alt, className }) {
       loading="lazy"
       decoding="async"
       referrerPolicy="no-referrer"
+      draggable={false}
       onError={() => setFailed(true)}
       className={className}
     />
@@ -123,6 +127,24 @@ export function LinkCard({
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
   const [error, setError] = useState(null);
 
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, isDragging } = useDraggable({
+    id: link.id,
+    data: { link },
+  });
+
+  /*
+    The pointer listeners go on the whole card and the key listener goes on the
+    grip alone. That split is deliberate: dragging from anywhere on the row is
+    what makes the gesture worth having, but a keyboard drag has to start from
+    something focusable, and making the row itself focusable would put a
+    `role="button"` around the title link and five real buttons.
+
+    Splitting them also avoids the duplicate that spreading `listeners` on both
+    would cause -- an event on the grip bubbles to the card, which is where the
+    pointer handlers live.
+  */
+  const { onKeyDown: onGripKeyDown, ...pointerListeners } = listeners ?? {};
+
   // 'queued' means published to the event log and waiting for a worker; from
   // the reader's point of view it is indistinguishable from the other two.
   const isProcessing = ['pending', 'queued', 'processing'].includes(link.processingStatus);
@@ -159,10 +181,15 @@ export function LinkCard({
 
   return (
     <li
+      ref={setNodeRef}
+      {...pointerListeners}
       className={`group rounded-xl border border-line bg-surface p-4 transition hover:border-line-strong ${
         // Read state as an edge rather than dimmed text: a read bookmark is
         // still meant to be readable.
         link.isRead ? 'border-l-2 border-l-line' : 'border-l-2 border-l-accent'
+      } ${
+        // The overlay is carrying the real card; this is the hole it left.
+        isDragging ? 'opacity-40' : ''
       }`}
     >
       <div className="flex gap-4">
@@ -180,6 +207,8 @@ export function LinkCard({
                   target="_blank"
                   // Fetched pages are never trusted with a handle on this tab.
                   rel="noreferrer noopener"
+                  // Otherwise the browser's own link drag races ours.
+                  draggable={false}
                   className="min-w-0 truncate underline-offset-4 hover:underline"
                 >
                   {isProcessing && !link.title ? <TitleShimmer /> : shownTitle}
@@ -211,8 +240,29 @@ export function LinkCard({
               Actions stay out of the way until the row is hovered or focused.
               The two that carry state -- favourite and read -- stay visible
               once they are on, because hiding them would hide the state.
+
+              `lv-row-action` is what keeps this from being a desktop-only card:
+              a touch device never hovers, so without it edit and delete were
+              not quiet, they were absent. See index.css.
             */}
             <div className="flex shrink-0 items-center gap-0.5">
+              {/*
+                The grip is an affordance and a keyboard entry point, not the
+                only way in: the pointer handlers are on the whole card. dnd-kit
+                supplies the `aria-describedby` that points a screen reader at
+                its own instructions.
+              */}
+              <button
+                ref={setActivatorNodeRef}
+                type="button"
+                {...attributes}
+                onKeyDown={onGripKeyDown}
+                aria-label={`Move ${shownTitle}`}
+                title="Drag to a collection or the bin"
+                className="lv-icon-button lv-row-action cursor-grab opacity-0 focus-visible:opacity-100 group-hover:opacity-100 active:cursor-grabbing"
+              >
+                <Icon path={ICONS.grip} />
+              </button>
               <IconButton
                 isOn={link.isFavorite}
                 icon="star"
@@ -221,7 +271,7 @@ export function LinkCard({
                 className={
                   link.isFavorite
                     ? ''
-                    : 'opacity-0 focus-visible:opacity-100 group-hover:opacity-100'
+                    : 'lv-row-action opacity-0 focus-visible:opacity-100 group-hover:opacity-100'
                 }
               />
               <IconButton
@@ -230,20 +280,20 @@ export function LinkCard({
                 label={link.isRead ? 'Mark as unread' : 'Mark as read'}
                 onClick={run(() => onUpdate(link.id, { isRead: !link.isRead }))}
                 className={
-                  link.isRead ? '' : 'opacity-0 focus-visible:opacity-100 group-hover:opacity-100'
+                  link.isRead ? '' : 'lv-row-action opacity-0 focus-visible:opacity-100 group-hover:opacity-100'
                 }
               />
               <IconButton
                 icon="edit"
                 label="Edit bookmark"
                 onClick={() => setIsEditing(true)}
-                className="opacity-0 focus-visible:opacity-100 group-hover:opacity-100"
+                className="lv-row-action opacity-0 focus-visible:opacity-100 group-hover:opacity-100"
               />
               <IconButton
                 icon="trash"
                 label="Delete bookmark"
                 onClick={() => setIsConfirmingDelete(true)}
-                className="opacity-0 hover:text-danger focus-visible:opacity-100 group-hover:opacity-100"
+                className="lv-row-action opacity-0 hover:text-danger focus-visible:opacity-100 group-hover:opacity-100"
               />
             </div>
           </div>
